@@ -1,0 +1,245 @@
+{
+  "sharpeRatio": 0.8596,
+  "annualReturn": 0.0447,
+  "maxDrawdown": -0.0413,
+  "hitRate": 0.5109,
+  "totalTrades": 104,
+  "transactionCosts": {
+    "feeBps": 10.0,
+    "slippageBps": 5.0,
+    "netSharpe": 0.8265
+  },
+  "walkForward": {
+    "windows": 4,
+    "positiveWindows": 4,
+    "avgOosSharpe": 0.8265
+  },
+  "customMetrics": {
+    "bestStrategy": "stock_specific_momentum",
+    "optimizedLookback": 10,
+    "optimizedQuantile": 0.4,
+    "lookbackValues": [
+      5,
+      10,
+      12,
+      15,
+      20,
+      30
+    ],
+    "quantileValues": [
+      0.1,
+      0.2,
+      0.3,
+      0.4
+    ],
+    "totalCombinations": 72,
+    "improvementOverBaseline": {
+      "total_momentum": {
+        "baseline_lookback": 12,
+        "baseline_quantile": 0.3,
+        "baseline_netSharpe": -0.524,
+        "optimized_lookback": 5,
+        "optimized_quantile": 0.1,
+        "optimized_netSharpe": -0.0351,
+        "sharpe_improvement": 0.4889
+      },
+      "industry_momentum": {
+        "baseline_lookback": 12,
+        "baseline_quantile": 0.3,
+        "baseline_netSharpe": -0.2838,
+        "optimized_lookback": 30,
+        "optimized_quantile": 0.3,
+        "optimized_netSharpe": 0.6741,
+        "sharpe_improvement": 0.9579
+      },
+      "stock_specific_momentum": {
+        "baseline_lookback": 12,
+        "baseline_quantile": 0.3,
+        "baseline_netSharpe": 0.5203,
+        "optimized_lookback": 10,
+        "optimized_quantile": 0.4,
+        "optimized_netSharpe": 0.8265,
+        "sharpe_improvement": 0.3062
+      }
+    },
+    "parameterSensitivity": {
+      "total_momentum": {
+        "lookback_sensitivity": {
+          "5": -0.1014,
+          "10": -0.3569,
+          "12": -0.4715,
+          "15": -0.6364,
+          "20": -0.6064,
+          "30": -0.4894
+        },
+        "quantile_sensitivity": {
+          "0.1": -0.4915,
+          "0.2": -0.4301,
+          "0.3": -0.4274,
+          "0.4": -0.4257
+        },
+        "best_params": {
+          "lookback": 5,
+          "quantile": 0.1,
+          "netSharpe": -0.0351
+        },
+        "worst_params": {
+          "lookback": 20,
+          "quantile": 0.1,
+          "netSharpe": -0.9619
+        },
+        "sharpe_range": 0.9268
+      },
+      "industry_momentum": {
+        "lookback_sensitivity": {
+          "5": -0.7242,
+          "10": 0.0328,
+          "12": -0.198,
+          "15": -0.2942,
+          "20": -0.3346,
+          "30": 0.3258
+        },
+        "quantile_sensitivity": {
+          "0.1": -0.2217,
+          "0.2": -0.5016,
+          "0.3": -0.0693,
+          "0.4": -0.0023
+        },
+        "best_params": {
+          "lookback": 30,
+          "quantile": 0.3,
+          "netSharpe": 0.6741
+        },
+        "worst_params": {
+          "lookback": 5,
+          "quantile": 0.2,
+          "netSharpe": -1.1492
+        },
+        "sharpe_range": 1.8233
+      },
+      "stock_specific_momentum": {
+        "lookback_sensitivity": {
+          "5": 0.3883,
+          "10": 0.2862,
+          "12": 0.2784,
+          "15": 0.0412,
+          "20": 0.1457,
+          "30": -0.1611
+        },
+        "quantile_sensitivity": {
+          "0.1": -0.1563,
+          "0.2": 0.0948,
+          "0.3": 0.3028,
+          "0.4": 0.4112
+        },
+        "best_params": {
+          "lookback": 10,
+          "quantile": 0.4,
+          "netSharpe": 0.8265
+        },
+        "worst_params": {
+          "lookback": 20,
+          "quantile": 0.1,
+          "netSharpe": -0.605
+        },
+        "sharpe_range": 1.4315
+      }
+    },
+    "top5Combinations": [
+      {
+        "lookback": 10,
+        "quantile": 0.4,
+        "strategy": "stock_specific_momentum",
+        "netSharpe": 0.8265,
+        "grossSharpe": 0.8596,
+        "annualReturn": 0.0447,
+        "maxDrawdown": -0.0413,
+        "hitRate": 0.5109,
+        "windows": 4,
+        "positiveWindows": 4,
+        "totalTrades": 104
+      },
+      {
+        "lookback": 30,
+        "quantile": 0.3,
+        "strategy": "industry_momentum",
+        "netSharpe": 0.6741,
+        "grossSharpe": 0.6937,
+        "annualReturn": 0.048,
+        "maxDrawdown": -0.1111,
+        "hitRate": 0.5098,
+        "windows": 4,
+        "positiveWindows": 3,
+        "totalTrades": 72
+      },
+      {
+        "lookback": 20,
+        "quantile": 0.2,
+        "strategy": "stock_specific_momentum",
+        "netSharpe": 0.5289,
+        "grossSharpe": 0.5491,
+        "annualReturn": 0.0426,
+        "maxDrawdown": -0.0963,
+        "hitRate": 0.5087,
+        "windows": 4,
+        "positiveWindows": 2,
+        "totalTrades": 48
+      },
+      {
+        "lookback": 20,
+        "quantile": 0.3,
+        "strategy": "stock_specific_momentum",
+        "netSharpe": 0.5267,
+        "grossSharpe": 0.5519,
+        "annualReturn": 0.0405,
+        "maxDrawdown": -0.1041,
+        "hitRate": 0.5205,
+        "windows": 4,
+        "positiveWindows": 3,
+        "totalTrades": 72
+      },
+      {
+        "lookback": 12,
+        "quantile": 0.3,
+        "strategy": "stock_specific_momentum",
+        "netSharpe": 0.5203,
+        "grossSharpe": 0.5428,
+        "annualReturn": 0.0494,
+        "maxDrawdown": -0.109,
+        "hitRate": 0.5162,
+        "windows": 4,
+        "positiveWindows": 3,
+        "totalTrades": 72
+      }
+    ],
+    "bestPerStrategy": {
+      "total_momentum": {
+        "lookback": 5,
+        "quantile": 0.1,
+        "netSharpe": -0.0351,
+        "grossSharpe": -0.0242,
+        "annualReturn": 0.0003,
+        "positiveWindows": 1,
+        "windows": 4
+      },
+      "industry_momentum": {
+        "lookback": 30,
+        "quantile": 0.3,
+        "netSharpe": 0.6741,
+        "grossSharpe": 0.6937,
+        "annualReturn": 0.048,
+        "positiveWindows": 3,
+        "windows": 4
+      },
+      "stock_specific_momentum": {
+        "lookback": 10,
+        "quantile": 0.4,
+        "netSharpe": 0.8265,
+        "grossSharpe": 0.8596,
+        "annualReturn": 0.0447,
+        "positiveWindows": 4,
+        "windows": 4
+      }
+    }
+  }
+}

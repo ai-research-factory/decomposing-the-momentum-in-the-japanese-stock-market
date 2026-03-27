@@ -818,6 +818,277 @@ def evaluate_transaction_costs(
     return metrics
 
 
+def run_parameter_grid_search(
+    panel: pd.DataFrame,
+    config: BacktestConfig | None = None,
+    lookback_values: list[int] | None = None,
+    quantile_values: list[float] | None = None,
+    strategy: str = "stock_specific_momentum",
+) -> list[dict]:
+    """
+    Grid search over lookback and quantile parameters for a given strategy.
+
+    Evaluates every (lookback, quantile) combination using walk-forward
+    validation and records performance metrics for each.
+
+    Args:
+        panel: Preprocessed panel with [date, stock_id, industry_id, price].
+        config: Backtest configuration.
+        lookback_values: List of lookback windows to test.
+        quantile_values: List of quantile thresholds to test.
+        strategy: Momentum column to optimize.
+
+    Returns:
+        List of dicts, one per parameter combination, sorted by net Sharpe descending.
+    """
+    config = config or BacktestConfig()
+    lookback_values = lookback_values or [5, 10, 12, 15, 20, 30]
+    quantile_values = quantile_values or [0.1, 0.2, 0.3, 0.4]
+
+    grid_results = []
+
+    for lb in lookback_values:
+        for q in quantile_values:
+            logger.info("Grid search: lookback=%d, quantile=%.2f, strategy=%s", lb, q, strategy)
+            results = run_walk_forward_evaluation(
+                panel, config=config, lookback=lb,
+                momentum_col=strategy, quantile=q,
+            )
+
+            if not results:
+                grid_results.append({
+                    "lookback": lb,
+                    "quantile": q,
+                    "strategy": strategy,
+                    "netSharpe": 0.0,
+                    "grossSharpe": 0.0,
+                    "annualReturn": 0.0,
+                    "maxDrawdown": 0.0,
+                    "hitRate": 0.0,
+                    "windows": 0,
+                    "positiveWindows": 0,
+                    "totalTrades": 0,
+                })
+                continue
+
+            net_sharpes = [r.net_sharpe for r in results]
+            gross_sharpes = [r.gross_sharpe for r in results]
+            positive_windows = sum(1 for s in net_sharpes if s > 0)
+
+            grid_results.append({
+                "lookback": lb,
+                "quantile": q,
+                "strategy": strategy,
+                "netSharpe": round(float(np.mean(net_sharpes)), 4),
+                "grossSharpe": round(float(np.mean(gross_sharpes)), 4),
+                "annualReturn": round(float(np.mean([r.annual_return for r in results])), 4),
+                "maxDrawdown": round(float(min(r.max_drawdown for r in results)), 4),
+                "hitRate": round(float(np.mean([r.hit_rate for r in results])), 4),
+                "windows": len(results),
+                "positiveWindows": positive_windows,
+                "totalTrades": sum(r.total_trades for r in results),
+            })
+
+    grid_results.sort(key=lambda x: x["netSharpe"], reverse=True)
+    return grid_results
+
+
+def analyze_parameter_sensitivity(
+    grid_results: list[dict],
+) -> dict:
+    """
+    Analyze sensitivity of performance to each hyperparameter.
+
+    Computes the average net Sharpe for each unique lookback value
+    (marginalizing over quantile) and each unique quantile value
+    (marginalizing over lookback).
+
+    Args:
+        grid_results: Output of run_parameter_grid_search.
+
+    Returns:
+        Dict with lookback_sensitivity, quantile_sensitivity, and best/worst params.
+    """
+    if not grid_results:
+        return {
+            "lookback_sensitivity": {},
+            "quantile_sensitivity": {},
+            "best_params": {},
+            "worst_params": {},
+            "sharpe_range": 0.0,
+        }
+
+    # Group by lookback
+    lookback_sharpes: dict[int, list[float]] = {}
+    for r in grid_results:
+        lb = r["lookback"]
+        lookback_sharpes.setdefault(lb, []).append(r["netSharpe"])
+
+    lookback_sensitivity = {
+        str(lb): round(float(np.mean(sharpes)), 4)
+        for lb, sharpes in sorted(lookback_sharpes.items())
+    }
+
+    # Group by quantile
+    quantile_sharpes: dict[float, list[float]] = {}
+    for r in grid_results:
+        q = r["quantile"]
+        quantile_sharpes.setdefault(q, []).append(r["netSharpe"])
+
+    quantile_sensitivity = {
+        str(q): round(float(np.mean(sharpes)), 4)
+        for q, sharpes in sorted(quantile_sharpes.items())
+    }
+
+    best = grid_results[0]  # already sorted descending
+    worst = grid_results[-1]
+
+    return {
+        "lookback_sensitivity": lookback_sensitivity,
+        "quantile_sensitivity": quantile_sensitivity,
+        "best_params": {"lookback": best["lookback"], "quantile": best["quantile"], "netSharpe": best["netSharpe"]},
+        "worst_params": {"lookback": worst["lookback"], "quantile": worst["quantile"], "netSharpe": worst["netSharpe"]},
+        "sharpe_range": round(best["netSharpe"] - worst["netSharpe"], 4),
+    }
+
+
+def evaluate_hyperparameter_optimization(
+    panel: pd.DataFrame,
+    config: BacktestConfig | None = None,
+    lookback_values: list[int] | None = None,
+    quantile_values: list[float] | None = None,
+) -> dict:
+    """
+    Full Phase 6 pipeline: hyperparameter optimization via grid search.
+
+    Optimizes lookback and quantile parameters for all 3 strategies,
+    compares optimized vs baseline performance, and reports sensitivity.
+
+    Args:
+        panel: Preprocessed panel data.
+        config: Backtest configuration.
+        lookback_values: Lookback values to search.
+        quantile_values: Quantile values to search.
+
+    Returns:
+        Dict matching ARF metrics.json schema with optimization results in customMetrics.
+    """
+    config = config or BacktestConfig()
+    lookback_values = lookback_values or [5, 10, 12, 15, 20, 30]
+    quantile_values = quantile_values or [0.1, 0.2, 0.3, 0.4]
+
+    # Run grid search for each strategy
+    all_grid_results = {}
+    all_sensitivities = {}
+    best_per_strategy = {}
+
+    for strategy in STRATEGY_COLUMNS:
+        logger.info("Optimizing strategy: %s", strategy)
+        grid = run_parameter_grid_search(
+            panel, config=config,
+            lookback_values=lookback_values,
+            quantile_values=quantile_values,
+            strategy=strategy,
+        )
+        all_grid_results[strategy] = grid
+        all_sensitivities[strategy] = analyze_parameter_sensitivity(grid)
+        if grid:
+            best_per_strategy[strategy] = grid[0]  # best by net Sharpe
+
+    # Baseline comparison (lookback=12, quantile=0.3)
+    baseline = {}
+    for strategy in STRATEGY_COLUMNS:
+        for r in all_grid_results.get(strategy, []):
+            if r["lookback"] == 12 and r["quantile"] == 0.3:
+                baseline[strategy] = r
+                break
+
+    # Find overall best strategy + params
+    overall_best_strategy = None
+    overall_best_sharpe = -999.0
+    for strategy, best in best_per_strategy.items():
+        if best["netSharpe"] > overall_best_sharpe:
+            overall_best_sharpe = best["netSharpe"]
+            overall_best_strategy = strategy
+
+    if not overall_best_strategy or overall_best_strategy not in best_per_strategy:
+        return {
+            "sharpeRatio": 0.0, "annualReturn": 0.0, "maxDrawdown": 0.0,
+            "hitRate": 0.0, "totalTrades": 0,
+            "transactionCosts": {"feeBps": config.fee_bps, "slippageBps": config.slippage_bps, "netSharpe": 0.0},
+            "walkForward": {"windows": 0, "positiveWindows": 0, "avgOosSharpe": 0.0},
+            "customMetrics": {"error": "No valid grid search results"},
+        }
+
+    best = best_per_strategy[overall_best_strategy]
+
+    # Build improvement-over-baseline summary
+    improvement = {}
+    for strategy in STRATEGY_COLUMNS:
+        opt = best_per_strategy.get(strategy, {})
+        base = baseline.get(strategy, {})
+        if opt and base:
+            improvement[strategy] = {
+                "baseline_lookback": 12,
+                "baseline_quantile": 0.3,
+                "baseline_netSharpe": base.get("netSharpe", 0.0),
+                "optimized_lookback": opt.get("lookback", 0),
+                "optimized_quantile": opt.get("quantile", 0.0),
+                "optimized_netSharpe": opt.get("netSharpe", 0.0),
+                "sharpe_improvement": round(opt.get("netSharpe", 0.0) - base.get("netSharpe", 0.0), 4),
+            }
+
+    # Build top-5 parameter combinations across all strategies
+    all_combinations = []
+    for strategy, grid in all_grid_results.items():
+        for r in grid[:5]:
+            all_combinations.append({**r, "strategy": strategy})
+    all_combinations.sort(key=lambda x: x["netSharpe"], reverse=True)
+    top5 = all_combinations[:5]
+
+    metrics = {
+        "sharpeRatio": best.get("grossSharpe", 0.0),
+        "annualReturn": best.get("annualReturn", 0.0),
+        "maxDrawdown": best.get("maxDrawdown", 0.0),
+        "hitRate": best.get("hitRate", 0.0),
+        "totalTrades": best.get("totalTrades", 0),
+        "transactionCosts": {
+            "feeBps": config.fee_bps,
+            "slippageBps": config.slippage_bps,
+            "netSharpe": best.get("netSharpe", 0.0),
+        },
+        "walkForward": {
+            "windows": best.get("windows", 0),
+            "positiveWindows": best.get("positiveWindows", 0),
+            "avgOosSharpe": best.get("netSharpe", 0.0),
+        },
+        "customMetrics": {
+            "bestStrategy": overall_best_strategy,
+            "optimizedLookback": best.get("lookback", 0),
+            "optimizedQuantile": best.get("quantile", 0.0),
+            "lookbackValues": lookback_values,
+            "quantileValues": quantile_values,
+            "totalCombinations": len(lookback_values) * len(quantile_values) * len(STRATEGY_COLUMNS),
+            "improvementOverBaseline": improvement,
+            "parameterSensitivity": all_sensitivities,
+            "top5Combinations": top5,
+            "bestPerStrategy": {
+                k: {
+                    "lookback": v.get("lookback", 0),
+                    "quantile": v.get("quantile", 0.0),
+                    "netSharpe": v.get("netSharpe", 0.0),
+                    "grossSharpe": v.get("grossSharpe", 0.0),
+                    "annualReturn": v.get("annualReturn", 0.0),
+                    "positiveWindows": v.get("positiveWindows", 0),
+                    "windows": v.get("windows", 0),
+                }
+                for k, v in best_per_strategy.items()
+            },
+        },
+    }
+    return metrics
+
+
 def save_metrics(metrics: dict, cycle: int = 4) -> Path:
     """Save metrics.json to the reports directory."""
     out_dir = REPORTS_DIR / f"cycle_{cycle}"
@@ -844,12 +1115,12 @@ if __name__ == "__main__":
         panel, report = build_panel()
         panel.to_csv(panel_path, index=False)
 
-    # Run transaction cost analysis (Phase 5)
-    print("\nRunning transaction cost analysis (all 3 strategies x 5 cost scenarios)...")
+    # Run hyperparameter optimization (Phase 6)
+    print("\nRunning hyperparameter optimization (3 strategies x lookback x quantile grid)...")
     config = BacktestConfig(n_splits=5, min_train_size=60)
-    metrics = evaluate_transaction_costs(panel, config=config, lookback=12)
+    metrics = evaluate_hyperparameter_optimization(panel, config=config)
 
     # Save results
-    save_metrics(metrics, cycle=5)
+    save_metrics(metrics, cycle=6)
     print("\n=== Metrics ===")
     print(json.dumps(metrics, indent=2))

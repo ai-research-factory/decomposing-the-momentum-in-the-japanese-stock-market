@@ -129,6 +129,29 @@ config = BacktestConfig(n_splits=5, min_train_size=60)
 metrics = evaluate_transaction_costs(panel, config=config, lookback=12)
 ```
 
+## Cycle 6 Results
+
+Hyperparameter optimization completed. Key findings:
+- Grid search over 72 parameter combinations (6 lookbacks x 4 quantiles x 3 strategies)
+- Stock-specific momentum optimized to Net Sharpe 0.83 (lookback=10, quantile=0.4), up from 0.52 baseline (+59%)
+- All 4 walk-forward windows profitable at optimal parameters (vs 3/4 at baseline)
+- Industry momentum becomes profitable (Sharpe 0.67) with longer lookback=30
+- Total momentum remains unprofitable across all parameter combinations
+- 29 new tests (129 total, all passing)
+
+See [reports/cycle_6/technical_findings.md](reports/cycle_6/technical_findings.md) for details.
+
+### Run hyperparameter optimization
+```python
+from src.evaluation import evaluate_hyperparameter_optimization
+from src.backtest import BacktestConfig
+import pandas as pd
+
+panel = pd.read_csv("data/jp_stocks_panel.csv", parse_dates=["date"])
+config = BacktestConfig(n_splits=5, min_train_size=60)
+metrics = evaluate_hyperparameter_optimization(panel, config=config)
+```
+
 ## Reports
 
 Each cycle produces:

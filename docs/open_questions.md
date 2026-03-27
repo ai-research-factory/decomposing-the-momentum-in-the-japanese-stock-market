@@ -40,6 +40,14 @@
 - **Breakeven cost ceiling**: Stock-specific momentum's breakeven exceeds 100 bps, the grid-search upper bound. The true breakeven may be significantly higher, but this is academic since realistic costs for Japanese large-caps are well below 50 bps.
 - **Gross vs net return equality**: Annual returns appear identical across cost scenarios because costs affect daily returns but the annualized return calculation in `compute_metrics` may round away small differences. The Sharpe ratio, which uses daily return means and standard deviations, better captures cost effects.
 
+## Hyperparameter Optimization Questions (Cycle 6)
+
+- **Overfitting risk**: With 72 parameter combinations tested across only 4 walk-forward windows, the selected optimal parameters (lookback=10, quantile=0.4) may overfit. The improvement from Sharpe 0.52 to 0.83 is substantial but should be validated on unseen data in Phase 7.
+- **Optimal lookback differs by strategy**: Stock-specific momentum favors short lookback (5-10 days) while industry momentum favors longer lookback (30 days). This suggests the two components genuinely capture different market dynamics, but also means a single "optimal lookback" doesn't exist — each strategy should be independently parameterized.
+- **Quantile sensitivity**: Stock-specific momentum improves monotonically with higher quantile (0.1 to 0.4), but this may be an artifact of the small universe (33 stocks). With quantile=0.4, the long/short legs contain ~13 stocks each, leaving only ~7 stocks "neutral." In a larger universe, this pattern might not hold.
+- **Total momentum still negative**: No parameter combination produces positive Sharpe for total momentum. This persistent underperformance at daily frequency reinforces the need for monthly resampling to capture the classic 12-month momentum effect.
+- **Grid resolution**: The search grid is coarse (6 lookback x 4 quantile values). Finer search around the optima could yield marginal improvements but increases overfitting risk with limited walk-forward windows.
+
 ## ARF Data API Notes
 
 - All 33 requested tickers returned data successfully (no API errors).

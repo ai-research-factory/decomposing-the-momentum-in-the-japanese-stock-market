@@ -1,0 +1,36 @@
+{
+  "sharpeRatio": 0.0,
+  "annualReturn": 0.0,
+  "maxDrawdown": 0.0,
+  "hitRate": 0.0,
+  "totalTrades": 0,
+  "transactionCosts": { "feeBps": 10, "slippageBps": 5, "netSharpe": 0.0 },
+  "walkForward": { "windows": 0, "positiveWindows": 0, "avgOosSharpe": 0.0 },
+  "customMetrics": {
+    "total_stocks": 33,
+    "n_industries": 7,
+    "date_range_start": "2021-03-26",
+    "date_range_end": "2026-03-27",
+    "total_observations": 40327,
+    "valid_momentum_observations": 39535,
+    "missing_price_pct": 0.0008,
+    "forward_filled_count": 1,
+    "outlier_count": 129,
+    "total_momentum_mean": 0.011456,
+    "total_momentum_std": 0.066929,
+    "industry_momentum_mean": 0.011456,
+    "industry_momentum_std": 0.049818,
+    "stock_specific_momentum_mean": 0.0,
+    "stock_specific_momentum_std": 0.032225,
+    "industry_stock_specific_correlation": 0.0,
+    "stocks_per_industry": {
+      "auto": 3,
+      "electronics": 8,
+      "finance": 5,
+      "pharma": 3,
+      "retail": 3,
+      "telecom_it": 6,
+      "trading": 5
+    }
+  }
+}

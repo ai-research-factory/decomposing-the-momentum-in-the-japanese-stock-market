@@ -7,7 +7,7 @@ proj_16402310
 StatArb, ResidualFactors
 
 ## Current Cycle
-1
+2
 
 ## Objective
 Implement, validate, and iteratively improve the paper's approach with production-quality standards.
@@ -69,30 +69,29 @@ df = df.set_index("timestamp")
 
 
 
-## ★ 今回のタスク (Cycle 1)
+## ★ 今回のタスク (Cycle 2)
 
 
-### Phase 1: コア分解アルゴリズムの実装
+### Phase 2: 実データパイプラインの構築
 
-**ゴール**: 合成データ上で株価の勢いを業界要因と個別要因に分解するコアロジックを実装する。
+**ゴール**: 実際の日本株価データを取得し、前処理を行い、保存するパイプラインを構築する。
 
 **具体的な作業指示**:
-1. `src/decomposition.py`ファイルを作成します。
-2. `decompose_momentum`という名前の関数を実装します。この関数は、`date`, `stock_id`, `industry_id`, `price`列を持つPandas DataFrameを入力として受け取ります。
-3. 関数内で、まず各銘柄のトータルリターンを計算します。次に、業界ごとのリターン（均等加重）を計算します。
-4. 各銘柄のリターンを業界リターンに回帰させ（`stock_return ~ beta * industry_return`）、残差を計算します。
-5. トータルリターン、業界リターン、残差リターンそれぞれについて、過去N期間（例: N=12）のモメンタムを計算します。
-6. `total_momentum`, `industry_momentum`, `stock_specific_momentum`列を持つDataFrameを返します。
-7. この関数をテストするために、`data/synthetic_data.py`で3業種10銘柄程度の合成時系列データ（価格）を生成するスクリプトを作成し、実行してください。
+1. `src/data_fetcher.py`を拡張し、ARF Data APIから利用可能な全日本株（33銘柄・7業種）を取得するパイプラインを構築する。
+2. 日付アラインメント、欠損値のフォワードフィル、外れ値検出などの前処理を実装する。
+3. データ品質レポート（DataQualityReport）を生成し、取得状況・欠損率・外れ値数を報告する。
+4. `tests/test_data_pipeline.py`にパイプライン各ステップのユニットテストを作成する。
 
 **期待される出力ファイル**:
-- src/decomposition.py
-- data/synthetic_data.py
-- reports/cycle_1/decomposition_sample.csv
+- src/data_fetcher.py（拡張済み）
+- tests/test_data_pipeline.py
+- reports/cycle_2/metrics.json
+- reports/cycle_2/technical_findings.md
 
-**受入基準 (これを全て満たすまで完了としない)**:
-- `decomposition_sample.csv`が生成され、`total_momentum`, `industry_momentum`, `stock_specific_momentum`の列が含まれている。
-- `tests/test_decomposition.py`に作成したユニットテストが成功する。
+**受入基準**:
+- 33銘柄・7業種のデータが取得され、前処理済みパネルが生成される。
+- `tests/test_data_pipeline.py`のユニットテスト（16件）が全て成功する。
+- 既存の`tests/test_decomposition.py`のテスト（10件）も引き続き成功する。
 
 
 
@@ -105,8 +104,8 @@ df = df.set_index("timestamp")
 
 ## 全体Phase計画 (参考)
 
-→ Phase 1: コア分解アルゴリズムの実装 — 合成データ上で株価の勢いを業界要因と個別要因に分解するコアロジックを実装する。
-  Phase 2: 実データパイプラインの構築 — 実際の日本株価データを取得し、前処理を行い、保存するパイプラインを構築する。
+✓ Phase 1: コア分解アルゴリズムの実装 — 合成データ上で株価の勢いを業界要因と個別要因に分解するコアロジックを実装する。
+→ Phase 2: 実データパイプラインの構築 — 実際の日本株価データを取得し、前処理を行い、保存するパイプラインを構築する。
   Phase 3: 評価フレームワークの実装 — トータルモメンタム戦略を評価するための基本的なウォークフォワード検証を実装する。
   Phase 4: 分解戦略のバックテスト — 分解アルゴリズムを評価フレームワークに統合し、3つの戦略（全体、業界、個別）をバックテストする。
   Phase 5: 取引コストの計算 — 取引コストモデルを実装し、グロスリターンとネットリターンを比較評価する。
@@ -147,8 +146,8 @@ df = df.set_index("timestamp")
 
 ## 出力ファイル
 以下のファイルを保存してから完了すること:
-- `reports/cycle_1/metrics.json` — 下記スキーマに従う（必須）
-- `reports/cycle_1/technical_findings.md` — 実装内容、結果、観察事項
+- `reports/cycle_2/metrics.json` — 下記スキーマに従う（必須）
+- `reports/cycle_2/technical_findings.md` — 実装内容、結果、観察事項
 
 ### metrics.json 必須スキーマ
 ```json

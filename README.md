@@ -20,9 +20,9 @@ pytest tests/
 
 ## Usage
 
-### Fetch data
+### Fetch and preprocess data
 ```bash
-python3 data/synthetic_data.py
+python3 -m src.data_fetcher
 ```
 
 ### Run decomposition
@@ -41,7 +41,7 @@ python3 -m pytest tests/ -v
 
 ## Data
 
-Data is fetched from the ARF Data API at runtime (10 Japanese stocks across 3 TOPIX industries). Do not commit data files.
+Data is fetched from the ARF Data API at runtime (33 Japanese stocks across 7 TOPIX-based industries). Do not commit data files. Data is cached in `data/` after first fetch.
 
 ## Cycle 1 Results
 
@@ -51,6 +51,17 @@ Core decomposition algorithm implemented. Key findings:
 - Near-zero correlation between industry and stock-specific components
 
 See [reports/cycle_1/technical_findings.md](reports/cycle_1/technical_findings.md) for details.
+
+## Cycle 2 Results
+
+Real data pipeline built. Key improvements:
+- Expanded from 10 stocks / 3 industries to 33 stocks / 7 industries
+- Added preprocessing: date alignment, forward-fill, outlier detection
+- Added `DataQualityReport` for pipeline diagnostics
+- 16 new pipeline tests (26 total, all passing)
+- Validated decomposition on expanded real dataset
+
+See [reports/cycle_2/technical_findings.md](reports/cycle_2/technical_findings.md) for details.
 
 ## Reports
 

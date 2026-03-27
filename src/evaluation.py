@@ -12,11 +12,15 @@ import numpy as np
 import pandas as pd
 
 from src.backtest import (
+    COST_SCENARIOS,
     BacktestConfig,
     BacktestResult,
+    CostBreakdown,
     WalkForwardValidator,
     calculate_costs,
+    calculate_costs_detailed,
     compute_metrics,
+    compute_turnover,
     generate_metrics_json,
 )
 from src.decomposition import decompose_momentum
@@ -483,6 +487,337 @@ def evaluate_decomposed_strategies(
     return metrics
 
 
+def run_cost_sensitivity_analysis(
+    panel: pd.DataFrame,
+    config: BacktestConfig | None = None,
+    lookback: int = 12,
+    quantile: float = 0.3,
+    scenarios: dict[str, dict] | None = None,
+) -> dict[str, dict[str, dict]]:
+    """
+    Run all 3 momentum strategies under multiple cost scenarios.
+
+    For each cost scenario, runs decomposed backtest and collects metrics.
+    This enables comparing gross vs net returns and understanding
+    how sensitive each strategy is to transaction costs.
+
+    Args:
+        panel: Preprocessed panel with [date, stock_id, industry_id, price].
+        config: Base backtest configuration (cost params will be overridden).
+        lookback: Momentum lookback window.
+        quantile: Long/short quantile.
+        scenarios: Dict of scenario_name -> {"fee_bps": ..., "slippage_bps": ...}.
+                   Defaults to COST_SCENARIOS.
+
+    Returns:
+        Dict: scenario_name -> strategy_name -> ARF metrics dict.
+    """
+    config = config or BacktestConfig()
+    scenarios = scenarios or COST_SCENARIOS
+
+    results_by_scenario = {}
+
+    # First run the walk-forward once (gross returns are the same across scenarios)
+    all_results = run_decomposed_backtest(
+        panel, config=config, lookback=lookback, quantile=quantile,
+    )
+
+    for scenario_name, scenario_params in scenarios.items():
+        scenario_config = BacktestConfig(
+            fee_bps=scenario_params["fee_bps"],
+            slippage_bps=scenario_params["slippage_bps"],
+            train_ratio=config.train_ratio,
+            n_splits=config.n_splits,
+            gap=config.gap,
+            min_train_size=config.min_train_size,
+        )
+
+        strategy_metrics = {}
+        for strategy_name, results in all_results.items():
+            # Recompute net returns under this cost scenario
+            adjusted_results = []
+            for r in results:
+                if r.pnl_series is not None and len(r.pnl_series) > 0:
+                    pos_series = pd.Series([1.0] * len(r.pnl_series), dtype=float)
+                    pos_series.iloc[0] = 0.0
+                    net_returns = calculate_costs(r.pnl_series, pos_series, scenario_config)
+                    net_metrics = compute_metrics(net_returns)
+                    adjusted = BacktestResult(
+                        window=r.window,
+                        train_start=r.train_start,
+                        train_end=r.train_end,
+                        test_start=r.test_start,
+                        test_end=r.test_end,
+                        gross_sharpe=r.gross_sharpe,
+                        net_sharpe=net_metrics["sharpeRatio"],
+                        annual_return=r.annual_return,
+                        max_drawdown=r.max_drawdown,
+                        total_trades=r.total_trades,
+                        hit_rate=r.hit_rate,
+                        pnl_series=r.pnl_series,
+                    )
+                else:
+                    adjusted = r
+                adjusted_results.append(adjusted)
+
+            custom = {"strategy": f"long_short_{strategy_name}", "scenario": scenario_name}
+            metrics = generate_metrics_json(adjusted_results, scenario_config, custom_metrics=custom)
+            strategy_metrics[strategy_name] = metrics
+
+        results_by_scenario[scenario_name] = strategy_metrics
+        logger.info("Scenario %s complete", scenario_name)
+
+    return results_by_scenario
+
+
+def compute_cost_impact(
+    sensitivity_results: dict[str, dict[str, dict]],
+) -> dict[str, dict]:
+    """
+    Compute the impact of transaction costs on each strategy.
+
+    Compares gross (zero-cost) performance to each cost scenario,
+    quantifying the Sharpe degradation and return drag.
+
+    Args:
+        sensitivity_results: Output of run_cost_sensitivity_analysis.
+
+    Returns:
+        Dict: strategy_name -> {
+            "grossSharpe": ..., "grossReturn": ...,
+            "scenarios": {scenario_name -> {"netSharpe": ..., "sharpeDelta": ..., ...}}
+        }
+    """
+    if "zero" not in sensitivity_results:
+        return {}
+
+    zero_scenario = sensitivity_results["zero"]
+    impact = {}
+
+    for strategy_name in STRATEGY_COLUMNS:
+        if strategy_name not in zero_scenario:
+            continue
+
+        gross_sharpe = zero_scenario[strategy_name]["sharpeRatio"]
+        gross_return = zero_scenario[strategy_name]["annualReturn"]
+
+        scenario_impacts = {}
+        for scenario_name, strategies in sensitivity_results.items():
+            if scenario_name == "zero":
+                continue
+            if strategy_name not in strategies:
+                continue
+
+            net_sharpe = strategies[strategy_name]["transactionCosts"]["netSharpe"]
+            net_return = strategies[strategy_name]["annualReturn"]
+            total_bps = (
+                strategies[strategy_name]["transactionCosts"]["feeBps"]
+                + strategies[strategy_name]["transactionCosts"]["slippageBps"]
+            )
+
+            scenario_impacts[scenario_name] = {
+                "totalCostBps": total_bps,
+                "netSharpe": net_sharpe,
+                "sharpeDelta": round(net_sharpe - gross_sharpe, 4),
+                "returnDragPct": round((gross_return - net_return) * 100, 4) if gross_return != 0 else 0.0,
+            }
+
+        impact[strategy_name] = {
+            "grossSharpe": gross_sharpe,
+            "grossReturn": gross_return,
+            "scenarios": scenario_impacts,
+        }
+
+    return impact
+
+
+def compute_breakeven_cost(
+    panel: pd.DataFrame,
+    config: BacktestConfig | None = None,
+    lookback: int = 12,
+    quantile: float = 0.3,
+    max_cost_bps: float = 100.0,
+    step_bps: float = 5.0,
+) -> dict[str, float]:
+    """
+    Find the breakeven transaction cost level for each strategy.
+
+    The breakeven cost is the total cost (fee + slippage) in bps at which
+    the strategy's net Sharpe drops to zero.
+
+    Args:
+        panel: Preprocessed panel data.
+        config: Base backtest configuration.
+        lookback: Momentum lookback window.
+        quantile: Long/short quantile.
+        max_cost_bps: Maximum cost to test.
+        step_bps: Step size for cost grid search.
+
+    Returns:
+        Dict: strategy_name -> breakeven cost in bps (0.0 if never profitable).
+    """
+    config = config or BacktestConfig()
+
+    # Run walk-forward once to get gross PnL series
+    all_results = run_decomposed_backtest(
+        panel, config=config, lookback=lookback, quantile=quantile,
+    )
+
+    breakeven = {}
+    cost_levels = np.arange(0, max_cost_bps + step_bps, step_bps)
+
+    for strategy_name, results in all_results.items():
+        if not results:
+            breakeven[strategy_name] = 0.0
+            continue
+
+        # Check if gross Sharpe is positive
+        gross_sharpes = [r.gross_sharpe for r in results]
+        avg_gross = float(np.mean(gross_sharpes))
+        if avg_gross <= 0:
+            breakeven[strategy_name] = 0.0
+            continue
+
+        # Binary-search style: find where net Sharpe crosses zero
+        be_cost = 0.0
+        for cost_bps in cost_levels:
+            test_config = BacktestConfig(
+                fee_bps=cost_bps * 0.67,  # 2:1 fee:slippage ratio
+                slippage_bps=cost_bps * 0.33,
+                train_ratio=config.train_ratio,
+                n_splits=config.n_splits,
+                gap=config.gap,
+                min_train_size=config.min_train_size,
+            )
+            net_sharpes = []
+            for r in results:
+                if r.pnl_series is not None and len(r.pnl_series) > 0:
+                    pos_series = pd.Series([1.0] * len(r.pnl_series), dtype=float)
+                    pos_series.iloc[0] = 0.0
+                    net_ret = calculate_costs(r.pnl_series, pos_series, test_config)
+                    nm = compute_metrics(net_ret)
+                    net_sharpes.append(nm["sharpeRatio"])
+                else:
+                    net_sharpes.append(0.0)
+
+            avg_net = float(np.mean(net_sharpes))
+            if avg_net <= 0:
+                # Interpolate between previous and current
+                if cost_bps > 0 and be_cost == 0.0:
+                    be_cost = cost_bps - step_bps / 2  # approximate
+                break
+            be_cost = cost_bps
+
+        breakeven[strategy_name] = round(be_cost, 1)
+
+    return breakeven
+
+
+def evaluate_transaction_costs(
+    panel: pd.DataFrame,
+    config: BacktestConfig | None = None,
+    lookback: int = 12,
+    quantile: float = 0.3,
+) -> dict:
+    """
+    Full Phase 5 pipeline: transaction cost analysis across strategies.
+
+    Runs cost sensitivity analysis, computes cost impact, and finds
+    breakeven costs. Returns ARF-schema metrics with extended customMetrics.
+
+    Args:
+        panel: Preprocessed panel data.
+        config: Backtest configuration.
+        lookback: Momentum lookback window.
+        quantile: Long/short quantile.
+
+    Returns:
+        Dict matching ARF metrics.json schema with cost analysis in customMetrics.
+    """
+    config = config or BacktestConfig()
+
+    logger.info("Running cost sensitivity analysis...")
+    sensitivity = run_cost_sensitivity_analysis(
+        panel, config=config, lookback=lookback, quantile=quantile,
+    )
+
+    logger.info("Computing cost impact...")
+    cost_impact = compute_cost_impact(sensitivity)
+
+    logger.info("Computing breakeven costs...")
+    breakeven = compute_breakeven_cost(
+        panel, config=config, lookback=lookback, quantile=quantile,
+    )
+
+    # Use medium cost scenario as the primary result
+    medium = sensitivity.get("medium", {})
+
+    # Find best strategy under medium costs
+    best_strategy = None
+    best_net_sharpe = -999.0
+    for sname, metrics in medium.items():
+        ns = metrics["transactionCosts"]["netSharpe"]
+        if ns > best_net_sharpe:
+            best_net_sharpe = ns
+            best_strategy = sname
+
+    if not best_strategy or best_strategy not in medium:
+        # Fallback to base evaluation
+        return evaluate_decomposed_strategies(panel, config=config, lookback=lookback, quantile=quantile)
+
+    best_metrics = medium[best_strategy]
+
+    # Build gross vs net comparison table
+    gross_vs_net = {}
+    for sname in STRATEGY_COLUMNS:
+        if sname in sensitivity.get("zero", {}) and sname in medium:
+            zero_m = sensitivity["zero"][sname]
+            med_m = medium[sname]
+            gross_vs_net[sname] = {
+                "grossSharpe": zero_m["sharpeRatio"],
+                "grossReturn": zero_m["annualReturn"],
+                "netSharpe": med_m["transactionCosts"]["netSharpe"],
+                "netReturn": med_m["annualReturn"],
+                "sharpeDegradation": round(
+                    zero_m["sharpeRatio"] - med_m["transactionCosts"]["netSharpe"], 4
+                ),
+                "breakevenCostBps": breakeven.get(sname, 0.0),
+            }
+
+    # Build per-scenario summary for best strategy
+    scenario_summary = {}
+    for scenario_name, strategies in sensitivity.items():
+        if best_strategy in strategies:
+            m = strategies[best_strategy]
+            scenario_summary[scenario_name] = {
+                "feeBps": m["transactionCosts"]["feeBps"],
+                "slippageBps": m["transactionCosts"]["slippageBps"],
+                "totalCostBps": m["transactionCosts"]["feeBps"] + m["transactionCosts"]["slippageBps"],
+                "netSharpe": m["transactionCosts"]["netSharpe"],
+                "netReturn": m["annualReturn"],
+            }
+
+    metrics = {
+        "sharpeRatio": best_metrics["sharpeRatio"],
+        "annualReturn": best_metrics["annualReturn"],
+        "maxDrawdown": best_metrics["maxDrawdown"],
+        "hitRate": best_metrics["hitRate"],
+        "totalTrades": best_metrics["totalTrades"],
+        "transactionCosts": best_metrics["transactionCosts"],
+        "walkForward": best_metrics["walkForward"],
+        "customMetrics": {
+            "bestStrategy": best_strategy,
+            "lookback_periods": lookback,
+            "quantile": quantile,
+            "grossVsNet": gross_vs_net,
+            "costSensitivity": scenario_summary,
+            "breakevenCosts": breakeven,
+            "costImpact": cost_impact,
+        },
+    }
+    return metrics
+
+
 def save_metrics(metrics: dict, cycle: int = 4) -> Path:
     """Save metrics.json to the reports directory."""
     out_dir = REPORTS_DIR / f"cycle_{cycle}"
@@ -509,12 +844,12 @@ if __name__ == "__main__":
         panel, report = build_panel()
         panel.to_csv(panel_path, index=False)
 
-    # Run decomposed backtest (Phase 4)
-    print("\nRunning decomposed momentum backtest (all 3 strategies)...")
+    # Run transaction cost analysis (Phase 5)
+    print("\nRunning transaction cost analysis (all 3 strategies x 5 cost scenarios)...")
     config = BacktestConfig(n_splits=5, min_train_size=60)
-    metrics = evaluate_decomposed_strategies(panel, config=config, lookback=12)
+    metrics = evaluate_transaction_costs(panel, config=config, lookback=12)
 
     # Save results
-    save_metrics(metrics, cycle=4)
+    save_metrics(metrics, cycle=5)
     print("\n=== Metrics ===")
     print(json.dumps(metrics, indent=2))

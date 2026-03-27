@@ -1,0 +1,182 @@
+{
+  "sharpeRatio": 0.5428,
+  "annualReturn": 0.0494,
+  "maxDrawdown": -0.109,
+  "hitRate": 0.5162,
+  "totalTrades": 72,
+  "transactionCosts": {
+    "feeBps": 10.0,
+    "slippageBps": 5.0,
+    "netSharpe": 0.5203
+  },
+  "walkForward": {
+    "windows": 4,
+    "positiveWindows": 3,
+    "avgOosSharpe": 0.5203
+  },
+  "customMetrics": {
+    "bestStrategy": "stock_specific_momentum",
+    "lookback_periods": 12,
+    "quantile": 0.3,
+    "grossVsNet": {
+      "total_momentum": {
+        "grossSharpe": -0.5047,
+        "grossReturn": -0.0518,
+        "netSharpe": -0.524,
+        "netReturn": -0.0518,
+        "sharpeDegradation": 0.0193,
+        "breakevenCostBps": 0.0
+      },
+      "industry_momentum": {
+        "grossSharpe": -0.2645,
+        "grossReturn": -0.0254,
+        "netSharpe": -0.2838,
+        "netReturn": -0.0254,
+        "sharpeDegradation": 0.0193,
+        "breakevenCostBps": 0.0
+      },
+      "stock_specific_momentum": {
+        "grossSharpe": 0.5428,
+        "grossReturn": 0.0494,
+        "netSharpe": 0.5203,
+        "netReturn": 0.0494,
+        "sharpeDegradation": 0.0225,
+        "breakevenCostBps": 100.0
+      }
+    },
+    "costSensitivity": {
+      "zero": {
+        "feeBps": 0.0,
+        "slippageBps": 0.0,
+        "totalCostBps": 0.0,
+        "netSharpe": 0.5428,
+        "netReturn": 0.0494
+      },
+      "low": {
+        "feeBps": 5.0,
+        "slippageBps": 3.0,
+        "totalCostBps": 8.0,
+        "netSharpe": 0.5308,
+        "netReturn": 0.0494
+      },
+      "medium": {
+        "feeBps": 10.0,
+        "slippageBps": 5.0,
+        "totalCostBps": 15.0,
+        "netSharpe": 0.5203,
+        "netReturn": 0.0494
+      },
+      "high": {
+        "feeBps": 20.0,
+        "slippageBps": 10.0,
+        "totalCostBps": 30.0,
+        "netSharpe": 0.4978,
+        "netReturn": 0.0494
+      },
+      "very_high": {
+        "feeBps": 30.0,
+        "slippageBps": 20.0,
+        "totalCostBps": 50.0,
+        "netSharpe": 0.4676,
+        "netReturn": 0.0494
+      }
+    },
+    "breakevenCosts": {
+      "total_momentum": 0.0,
+      "industry_momentum": 0.0,
+      "stock_specific_momentum": 100.0
+    },
+    "costImpact": {
+      "total_momentum": {
+        "grossSharpe": -0.5047,
+        "grossReturn": -0.0518,
+        "scenarios": {
+          "low": {
+            "totalCostBps": 8.0,
+            "netSharpe": -0.515,
+            "sharpeDelta": -0.0103,
+            "returnDragPct": 0.0
+          },
+          "medium": {
+            "totalCostBps": 15.0,
+            "netSharpe": -0.524,
+            "sharpeDelta": -0.0193,
+            "returnDragPct": 0.0
+          },
+          "high": {
+            "totalCostBps": 30.0,
+            "netSharpe": -0.5432,
+            "sharpeDelta": -0.0385,
+            "returnDragPct": 0.0
+          },
+          "very_high": {
+            "totalCostBps": 50.0,
+            "netSharpe": -0.5686,
+            "sharpeDelta": -0.0639,
+            "returnDragPct": 0.0
+          }
+        }
+      },
+      "industry_momentum": {
+        "grossSharpe": -0.2645,
+        "grossReturn": -0.0254,
+        "scenarios": {
+          "low": {
+            "totalCostBps": 8.0,
+            "netSharpe": -0.2748,
+            "sharpeDelta": -0.0103,
+            "returnDragPct": 0.0
+          },
+          "medium": {
+            "totalCostBps": 15.0,
+            "netSharpe": -0.2838,
+            "sharpeDelta": -0.0193,
+            "returnDragPct": 0.0
+          },
+          "high": {
+            "totalCostBps": 30.0,
+            "netSharpe": -0.303,
+            "sharpeDelta": -0.0385,
+            "returnDragPct": 0.0
+          },
+          "very_high": {
+            "totalCostBps": 50.0,
+            "netSharpe": -0.3283,
+            "sharpeDelta": -0.0638,
+            "returnDragPct": 0.0
+          }
+        }
+      },
+      "stock_specific_momentum": {
+        "grossSharpe": 0.5428,
+        "grossReturn": 0.0494,
+        "scenarios": {
+          "low": {
+            "totalCostBps": 8.0,
+            "netSharpe": 0.5308,
+            "sharpeDelta": -0.012,
+            "returnDragPct": 0.0
+          },
+          "medium": {
+            "totalCostBps": 15.0,
+            "netSharpe": 0.5203,
+            "sharpeDelta": -0.0225,
+            "returnDragPct": 0.0
+          },
+          "high": {
+            "totalCostBps": 30.0,
+            "netSharpe": 0.4978,
+            "sharpeDelta": -0.045,
+            "returnDragPct": 0.0
+          },
+          "very_high": {
+            "totalCostBps": 50.0,
+            "netSharpe": 0.4676,
+            "sharpeDelta": -0.0752,
+            "returnDragPct": 0.0
+          }
+        }
+      }
+    }
+  }
+}

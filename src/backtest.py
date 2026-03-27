@@ -19,6 +19,29 @@ class BacktestConfig:
     min_train_size: int = 252   # Minimum training samples (~1 year daily)
 
 
+# Pre-defined cost scenarios for sensitivity analysis
+COST_SCENARIOS = {
+    "zero": {"fee_bps": 0.0, "slippage_bps": 0.0, "label": "Zero costs"},
+    "low": {"fee_bps": 5.0, "slippage_bps": 3.0, "label": "Low costs (8 bps)"},
+    "medium": {"fee_bps": 10.0, "slippage_bps": 5.0, "label": "Medium costs (15 bps)"},
+    "high": {"fee_bps": 20.0, "slippage_bps": 10.0, "label": "High costs (30 bps)"},
+    "very_high": {"fee_bps": 30.0, "slippage_bps": 20.0, "label": "Very high costs (50 bps)"},
+}
+
+
+@dataclass
+class CostBreakdown:
+    """Detailed breakdown of transaction costs for a backtest window."""
+    window: int
+    total_cost: float          # Total cost as fraction of portfolio
+    fee_cost: float            # Commission/fee portion
+    slippage_cost: float       # Slippage/market-impact portion
+    n_trades: int              # Number of trades (position changes)
+    turnover: float            # Sum of absolute position changes
+    cost_per_trade_bps: float  # Average cost per trade in bps
+    cost_drag_annual_bps: float  # Annualized cost drag in bps
+
+
 @dataclass
 class BacktestResult:
     """Results from a single walk-forward window."""
@@ -90,6 +113,92 @@ def calculate_costs(returns: pd.Series, positions: pd.Series, config: BacktestCo
     cost_per_trade = (config.fee_bps + config.slippage_bps) / 10000
     costs = trades * cost_per_trade
     return returns - costs
+
+
+def calculate_costs_detailed(
+    returns: pd.Series,
+    positions: pd.Series,
+    config: BacktestConfig,
+    window: int = 0,
+    periods_per_year: int = 252,
+) -> tuple[pd.Series, CostBreakdown]:
+    """
+    Calculate transaction costs with a detailed breakdown.
+
+    Separates fee and slippage components and computes turnover,
+    per-trade costs, and annualized cost drag.
+
+    Args:
+        returns: Gross returns series.
+        positions: Position series (-1, 0, 1 or continuous).
+        config: Backtest configuration.
+        window: Walk-forward window number for labeling.
+        periods_per_year: Trading periods per year.
+
+    Returns:
+        Tuple of (net_returns, CostBreakdown).
+    """
+    trades = positions.diff().abs().fillna(0)
+    turnover = float(trades.sum())
+    n_trades = int((trades > 0).sum())
+
+    fee_cost_total = turnover * config.fee_bps / 10000
+    slippage_cost_total = turnover * config.slippage_bps / 10000
+    total_cost = fee_cost_total + slippage_cost_total
+
+    cost_per_trade_bps = 0.0
+    if n_trades > 0:
+        cost_per_trade_bps = (total_cost / n_trades) * 10000
+
+    n_periods = len(returns)
+    if n_periods > 0:
+        cost_drag_annual_bps = (total_cost / n_periods) * periods_per_year * 10000
+    else:
+        cost_drag_annual_bps = 0.0
+
+    costs = trades * (config.fee_bps + config.slippage_bps) / 10000
+    net_returns = returns - costs
+
+    breakdown = CostBreakdown(
+        window=window,
+        total_cost=round(total_cost, 6),
+        fee_cost=round(fee_cost_total, 6),
+        slippage_cost=round(slippage_cost_total, 6),
+        n_trades=n_trades,
+        turnover=round(turnover, 4),
+        cost_per_trade_bps=round(cost_per_trade_bps, 2),
+        cost_drag_annual_bps=round(cost_drag_annual_bps, 2),
+    )
+    return net_returns, breakdown
+
+
+def compute_turnover(positions_history: list[pd.DataFrame]) -> float:
+    """
+    Compute average one-way turnover across rebalancing events.
+
+    Each element of positions_history is a DataFrame with stock_id, position
+    columns representing the portfolio at that point.
+
+    Args:
+        positions_history: List of portfolio DataFrames in chronological order.
+
+    Returns:
+        Average one-way turnover (fraction of portfolio changed per rebalance).
+    """
+    if len(positions_history) < 2:
+        return 0.0
+
+    turnovers = []
+    for i in range(1, len(positions_history)):
+        prev = positions_history[i - 1].set_index("stock_id")["position"]
+        curr = positions_history[i].set_index("stock_id")["position"]
+        all_stocks = prev.index.union(curr.index)
+        prev_full = prev.reindex(all_stocks, fill_value=0.0)
+        curr_full = curr.reindex(all_stocks, fill_value=0.0)
+        turnover = float((curr_full - prev_full).abs().sum()) / 2.0
+        turnovers.append(turnover)
+
+    return float(np.mean(turnovers))
 
 
 def compute_metrics(returns: pd.Series, risk_free_rate: float = 0.0, periods_per_year: int = 252) -> dict:

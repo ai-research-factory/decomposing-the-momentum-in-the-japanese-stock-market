@@ -106,6 +106,29 @@ config = BacktestConfig(n_splits=5, min_train_size=60)
 metrics = evaluate_decomposed_strategies(panel, config=config, lookback=12)
 ```
 
+## Cycle 5 Results
+
+Transaction cost analysis completed. Key findings:
+- All 3 strategies evaluated under 5 cost scenarios (zero, low, medium, high, very_high)
+- Stock-specific momentum is highly cost-robust: Net Sharpe 0.47 even at 50 bps costs
+- Breakeven cost for stock-specific momentum exceeds 100 bps
+- Total and industry momentum remain unprofitable regardless of cost level
+- Cost impact is modest (~2 bps Sharpe degradation per 10 bps costs) due to low turnover
+- 33 new tests (100 total, all passing)
+
+See [reports/cycle_5/technical_findings.md](reports/cycle_5/technical_findings.md) for details.
+
+### Run transaction cost analysis
+```python
+from src.evaluation import evaluate_transaction_costs
+from src.backtest import BacktestConfig
+import pandas as pd
+
+panel = pd.read_csv("data/jp_stocks_panel.csv", parse_dates=["date"])
+config = BacktestConfig(n_splits=5, min_train_size=60)
+metrics = evaluate_transaction_costs(panel, config=config, lookback=12)
+```
+
 ## Reports
 
 Each cycle produces:

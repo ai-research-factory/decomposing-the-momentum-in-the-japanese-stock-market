@@ -33,6 +33,13 @@
 - **Industry vs stock-specific correlation near zero**: The 0.026 correlation is expected from OLS residuals but may differ from the paper's reported negative correlation when using monthly frequency and longer lookback.
 - **Frequency mismatch**: The largest open question remains the daily vs monthly frequency gap. Phases 6+ should explore monthly resampling with 12-month lookback to align with the paper's methodology.
 
+## Transaction Cost Questions (Cycle 5)
+
+- **Low turnover masks cost sensitivity**: Because portfolios are static within each walk-forward window (no intra-window rebalancing), turnover and cost drag are minimal. A dynamic rebalancing strategy would reveal greater cost sensitivity.
+- **Linear cost model**: The current model assumes constant cost per trade (fee + slippage in bps). In practice, market impact is nonlinear — it increases with trade size and decreases with liquidity. The `calculate_costs_detailed()` function provides the foundation for more sophisticated models.
+- **Breakeven cost ceiling**: Stock-specific momentum's breakeven exceeds 100 bps, the grid-search upper bound. The true breakeven may be significantly higher, but this is academic since realistic costs for Japanese large-caps are well below 50 bps.
+- **Gross vs net return equality**: Annual returns appear identical across cost scenarios because costs affect daily returns but the annualized return calculation in `compute_metrics` may round away small differences. The Sharpe ratio, which uses daily return means and standard deviations, better captures cost effects.
+
 ## ARF Data API Notes
 
 - All 33 requested tickers returned data successfully (no API errors).

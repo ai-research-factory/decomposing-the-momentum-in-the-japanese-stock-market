@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# Data (NEVER commit data files)
+data/
+!data/.gitkeep
+*.csv
+*.parquet
+*.h5
+*.pkl
+*.npy
+*.npz
+
+# Models
+models/
+!models/.gitkeep
+*.pt
+*.pth
+*.onnx
+*.joblib
+
+# Environment
+venv/
+.venv/
+.env
+*.log
+
+# IDE / Tools
+.claude/
+.vscode/
+.idea/
+wandb/
+runs/
+mlruns/
+
+# OS
+.DS_Store
+Thumbs.db

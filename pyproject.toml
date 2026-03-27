@@ -1,0 +1,6 @@
+[project]
+name = "decomposing-the-momentum-in-the-japanese-stock-market"
+version = "0.1.0"
+description = "Decomposing the Momentum in the Japanese Stock Market"
+requires-python = ">=3.10"
+dependencies = ["numpy", "pandas", "scikit-learn", "torch", "matplotlib", "tqdm"]

@@ -152,6 +152,31 @@ config = BacktestConfig(n_splits=5, min_train_size=60)
 metrics = evaluate_hyperparameter_optimization(panel, config=config)
 ```
 
+## Cycle 7 Results
+
+Robustness verification completed. Key findings:
+- Optimized stock-specific momentum (lookback=10, quantile=0.4) achieves Net Sharpe 0.83 on full period
+- Holdout validation: minimal Sharpe degradation (0.008) for stock-specific momentum
+- Bootstrap 95% CI entirely above zero: [0.65, 1.11], P(Sharpe > 0) = 100%
+- Parameter neighborhood: 80% of nearby parameters also profitable
+- Walk-forward config sensitivity is a concern: only 42% of configs produce positive Sharpe
+- Sub-period consistency weak (1/3 profitable) due to data limitations
+- Overall robustness score: 0.60 (3/5 checks passed)
+- 30 new tests (159 total, all passing)
+
+See [reports/cycle_7/technical_findings.md](reports/cycle_7/technical_findings.md) for details.
+
+### Run robustness verification
+```python
+from src.evaluation import evaluate_robustness
+from src.backtest import BacktestConfig
+import pandas as pd
+
+panel = pd.read_csv("data/jp_stocks_panel.csv", parse_dates=["date"])
+config = BacktestConfig(n_splits=5, min_train_size=60)
+metrics = evaluate_robustness(panel, config=config)
+```
+
 ## Reports
 
 Each cycle produces:

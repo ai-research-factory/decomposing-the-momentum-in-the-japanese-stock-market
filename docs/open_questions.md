@@ -48,6 +48,14 @@
 - **Total momentum still negative**: No parameter combination produces positive Sharpe for total momentum. This persistent underperformance at daily frequency reinforces the need for monthly resampling to capture the classic 12-month momentum effect.
 - **Grid resolution**: The search grid is coarse (6 lookback x 4 quantile values). Finer search around the optima could yield marginal improvements but increases overfitting risk with limited walk-forward windows.
 
+## Robustness Verification Questions (Cycle 7)
+
+- **Walk-forward configuration sensitivity**: Performance varies substantially across different walk-forward configurations (n_splits, min_train_size). Only 42% of 12 tested configurations produce positive Sharpe. The best result (0.83) occurs with n_splits=5, min_train_size=60, but nearby configurations like n_splits=5, min_train_size=80 produce Sharpe -0.82. This suggests the strategy's apparent profitability is partially dependent on evaluation methodology.
+- **Holdout parameter instability**: The holdout validation selects different optimal parameters (lookback=20, quantile=0.1) than the full-period optimization (lookback=10, quantile=0.4). Despite this, the stock-specific momentum strategy itself remains profitable on holdout data (Sharpe 0.45), indicating strategy-level robustness even with parameter-level instability.
+- **Sub-period limitations**: Each of 3 sub-periods contains only ~400 dates and generates just 1 walk-forward window, producing very noisy per-period Sharpe estimates. The -1.84 Sharpe in period 1 (2021-03 to 2022-11) may reflect the post-COVID market regime rather than strategy failure. More data would be needed for reliable sub-period analysis.
+- **Bootstrap CI width**: The 95% CI width of 0.46 Sharpe units reflects only 4 walk-forward windows in the bootstrap. While the entire CI is above zero, higher confidence would require more independent evaluation windows.
+- **Baseline outperforms on holdout**: Stock-specific momentum with baseline parameters (lookback=12, quantile=0.3) achieved Sharpe 0.74 on holdout, vs 0.45 for holdout-optimized parameters. This raises the question of whether grid search optimization adds value or introduces overfitting when the number of walk-forward windows is small.
+
 ## ARF Data API Notes
 
 - All 33 requested tickers returned data successfully (no API errors).

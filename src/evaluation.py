@@ -1089,6 +1089,597 @@ def evaluate_hyperparameter_optimization(
     return metrics
 
 
+def run_holdout_validation(
+    panel: pd.DataFrame,
+    config: BacktestConfig | None = None,
+    holdout_fraction: float = 0.5,
+    lookback_values: list[int] | None = None,
+    quantile_values: list[float] | None = None,
+) -> dict:
+    """
+    Validate optimized parameters on a temporal holdout set.
+
+    Splits data chronologically: first half for optimization, second half
+    for out-of-sample validation with the optimized parameters.
+
+    Args:
+        panel: Preprocessed panel with [date, stock_id, industry_id, price].
+        config: Backtest configuration.
+        holdout_fraction: Fraction of dates reserved for holdout (end of period).
+        lookback_values: Lookback values for grid search on optimization set.
+        quantile_values: Quantile values for grid search on optimization set.
+
+    Returns:
+        Dict with optimization results, holdout results, and comparison.
+    """
+    config = config or BacktestConfig()
+    lookback_values = lookback_values or [5, 10, 12, 15, 20, 30]
+    quantile_values = quantile_values or [0.1, 0.2, 0.3, 0.4]
+
+    dates = sorted(panel["date"].unique())
+    split_idx = int(len(dates) * (1 - holdout_fraction))
+    opt_dates = dates[:split_idx]
+    holdout_dates = dates[split_idx:]
+
+    opt_panel = panel[panel["date"].isin(opt_dates)].copy()
+    holdout_panel = panel[panel["date"].isin(holdout_dates)].copy()
+
+    logger.info(
+        "Holdout split: optimization=%d dates, holdout=%d dates",
+        len(opt_dates), len(holdout_dates),
+    )
+
+    # Optimize on first half
+    best_per_strategy = {}
+    for strategy in STRATEGY_COLUMNS:
+        grid = run_parameter_grid_search(
+            opt_panel, config=config,
+            lookback_values=lookback_values,
+            quantile_values=quantile_values,
+            strategy=strategy,
+        )
+        if grid:
+            best_per_strategy[strategy] = grid[0]
+
+    # Validate on holdout
+    holdout_results = {}
+    for strategy, best in best_per_strategy.items():
+        results = run_walk_forward_evaluation(
+            holdout_panel, config=config,
+            lookback=best["lookback"],
+            momentum_col=strategy,
+            quantile=best["quantile"],
+        )
+        if results:
+            net_sharpes = [r.net_sharpe for r in results]
+            holdout_results[strategy] = {
+                "lookback": best["lookback"],
+                "quantile": best["quantile"],
+                "opt_netSharpe": best["netSharpe"],
+                "holdout_netSharpe": round(float(np.mean(net_sharpes)), 4),
+                "holdout_grossSharpe": round(float(np.mean([r.gross_sharpe for r in results])), 4),
+                "holdout_annualReturn": round(float(np.mean([r.annual_return for r in results])), 4),
+                "holdout_maxDrawdown": round(float(min(r.max_drawdown for r in results)), 4),
+                "holdout_windows": len(results),
+                "holdout_positiveWindows": sum(1 for s in net_sharpes if s > 0),
+                "sharpe_degradation": round(best["netSharpe"] - float(np.mean(net_sharpes)), 4),
+            }
+        else:
+            holdout_results[strategy] = {
+                "lookback": best["lookback"],
+                "quantile": best["quantile"],
+                "opt_netSharpe": best["netSharpe"],
+                "holdout_netSharpe": 0.0,
+                "holdout_windows": 0,
+                "holdout_positiveWindows": 0,
+                "sharpe_degradation": best["netSharpe"],
+            }
+
+    # Also run baseline (12, 0.3) on holdout for comparison
+    baseline_holdout = {}
+    for strategy in STRATEGY_COLUMNS:
+        results = run_walk_forward_evaluation(
+            holdout_panel, config=config,
+            lookback=12, momentum_col=strategy, quantile=0.3,
+        )
+        if results:
+            net_sharpes = [r.net_sharpe for r in results]
+            baseline_holdout[strategy] = {
+                "holdout_netSharpe": round(float(np.mean(net_sharpes)), 4),
+                "holdout_windows": len(results),
+                "holdout_positiveWindows": sum(1 for s in net_sharpes if s > 0),
+            }
+        else:
+            baseline_holdout[strategy] = {"holdout_netSharpe": 0.0, "holdout_windows": 0, "holdout_positiveWindows": 0}
+
+    return {
+        "opt_date_range": [str(pd.Timestamp(opt_dates[0]).date()), str(pd.Timestamp(opt_dates[-1]).date())],
+        "holdout_date_range": [str(pd.Timestamp(holdout_dates[0]).date()), str(pd.Timestamp(holdout_dates[-1]).date())],
+        "optimized": holdout_results,
+        "baseline": baseline_holdout,
+    }
+
+
+def run_walk_forward_sensitivity(
+    panel: pd.DataFrame,
+    lookback: int = 10,
+    momentum_col: str = "stock_specific_momentum",
+    quantile: float = 0.4,
+    n_splits_values: list[int] | None = None,
+    min_train_values: list[int] | None = None,
+) -> list[dict]:
+    """
+    Test sensitivity to walk-forward configuration parameters.
+
+    Runs the strategy with different n_splits and min_train_size to check
+    whether performance is robust to the walk-forward setup itself.
+
+    Args:
+        panel: Preprocessed panel data.
+        lookback: Momentum lookback (use optimized value).
+        momentum_col: Strategy to evaluate.
+        quantile: Quantile threshold (use optimized value).
+        n_splits_values: List of n_splits to test.
+        min_train_values: List of min_train_size to test.
+
+    Returns:
+        List of dicts with configuration and resulting metrics.
+    """
+    n_splits_values = n_splits_values or [3, 5, 7, 10]
+    min_train_values = min_train_values or [40, 60, 80]
+
+    results = []
+    for ns in n_splits_values:
+        for mt in min_train_values:
+            config = BacktestConfig(n_splits=ns, min_train_size=mt)
+            wf_results = run_walk_forward_evaluation(
+                panel, config=config, lookback=lookback,
+                momentum_col=momentum_col, quantile=quantile,
+            )
+            if wf_results:
+                net_sharpes = [r.net_sharpe for r in wf_results]
+                results.append({
+                    "n_splits": ns,
+                    "min_train_size": mt,
+                    "netSharpe": round(float(np.mean(net_sharpes)), 4),
+                    "grossSharpe": round(float(np.mean([r.gross_sharpe for r in wf_results])), 4),
+                    "windows": len(wf_results),
+                    "positiveWindows": sum(1 for s in net_sharpes if s > 0),
+                    "annualReturn": round(float(np.mean([r.annual_return for r in wf_results])), 4),
+                    "maxDrawdown": round(float(min(r.max_drawdown for r in wf_results)), 4),
+                })
+            else:
+                results.append({
+                    "n_splits": ns,
+                    "min_train_size": mt,
+                    "netSharpe": 0.0,
+                    "grossSharpe": 0.0,
+                    "windows": 0,
+                    "positiveWindows": 0,
+                    "annualReturn": 0.0,
+                    "maxDrawdown": 0.0,
+                })
+
+    return results
+
+
+def check_parameter_neighborhood(
+    panel: pd.DataFrame,
+    config: BacktestConfig | None = None,
+    center_lookback: int = 10,
+    center_quantile: float = 0.4,
+    strategy: str = "stock_specific_momentum",
+    lookback_delta: int = 3,
+    quantile_delta: float = 0.1,
+) -> dict:
+    """
+    Check performance stability in the neighborhood of optimal parameters.
+
+    Tests parameters around the optimum to verify the optimum is not an
+    isolated spike (which would indicate overfitting).
+
+    Args:
+        panel: Preprocessed panel data.
+        config: Backtest configuration.
+        center_lookback: Optimal lookback from grid search.
+        center_quantile: Optimal quantile from grid search.
+        strategy: Momentum strategy column.
+        lookback_delta: Range around center lookback to test.
+        quantile_delta: Range around center quantile to test.
+
+    Returns:
+        Dict with center performance, neighbor performances, and stability metrics.
+    """
+    config = config or BacktestConfig()
+
+    lookback_range = [
+        lb for lb in range(
+            max(3, center_lookback - lookback_delta),
+            center_lookback + lookback_delta + 1,
+        )
+    ]
+    quantile_range = [
+        round(q, 2)
+        for q in np.arange(
+            max(0.1, center_quantile - quantile_delta),
+            min(0.5, center_quantile + quantile_delta) + 0.01,
+            0.05,
+        )
+    ]
+
+    neighbor_results = []
+    center_sharpe = None
+
+    for lb in lookback_range:
+        for q in quantile_range:
+            results = run_walk_forward_evaluation(
+                panel, config=config, lookback=lb,
+                momentum_col=strategy, quantile=q,
+            )
+            if results:
+                net_sharpes = [r.net_sharpe for r in results]
+                avg_sharpe = round(float(np.mean(net_sharpes)), 4)
+            else:
+                avg_sharpe = 0.0
+
+            entry = {"lookback": lb, "quantile": q, "netSharpe": avg_sharpe}
+            neighbor_results.append(entry)
+
+            if lb == center_lookback and abs(q - center_quantile) < 0.001:
+                center_sharpe = avg_sharpe
+
+    if center_sharpe is None:
+        center_sharpe = 0.0
+
+    neighbor_sharpes = [r["netSharpe"] for r in neighbor_results]
+    positive_neighbors = sum(1 for s in neighbor_sharpes if s > 0)
+
+    return {
+        "center": {"lookback": center_lookback, "quantile": center_quantile, "netSharpe": center_sharpe},
+        "neighbors": neighbor_results,
+        "avg_neighbor_sharpe": round(float(np.mean(neighbor_sharpes)), 4),
+        "std_neighbor_sharpe": round(float(np.std(neighbor_sharpes)), 4),
+        "positive_fraction": round(positive_neighbors / max(1, len(neighbor_results)), 4),
+        "n_neighbors": len(neighbor_results),
+        "center_vs_avg_delta": round(center_sharpe - float(np.mean(neighbor_sharpes)), 4),
+    }
+
+
+def bootstrap_confidence(
+    panel: pd.DataFrame,
+    config: BacktestConfig | None = None,
+    lookback: int = 10,
+    momentum_col: str = "stock_specific_momentum",
+    quantile: float = 0.4,
+    n_bootstrap: int = 500,
+    confidence_level: float = 0.95,
+    seed: int = 42,
+) -> dict:
+    """
+    Bootstrap confidence intervals for strategy Sharpe ratio.
+
+    Runs walk-forward evaluation once, then resamples the per-window
+    Sharpe ratios to construct confidence intervals.
+
+    Args:
+        panel: Preprocessed panel data.
+        config: Backtest configuration.
+        lookback: Momentum lookback window.
+        momentum_col: Strategy column.
+        quantile: Portfolio quantile.
+        n_bootstrap: Number of bootstrap samples.
+        confidence_level: Confidence level (e.g. 0.95 for 95% CI).
+        seed: Random seed.
+
+    Returns:
+        Dict with point estimate, CI bounds, and bootstrap distribution stats.
+    """
+    config = config or BacktestConfig()
+    rng = np.random.RandomState(seed)
+
+    results = run_walk_forward_evaluation(
+        panel, config=config, lookback=lookback,
+        momentum_col=momentum_col, quantile=quantile,
+    )
+
+    if not results:
+        return {
+            "point_estimate": 0.0,
+            "ci_lower": 0.0,
+            "ci_upper": 0.0,
+            "n_windows": 0,
+            "n_bootstrap": n_bootstrap,
+        }
+
+    window_sharpes = np.array([r.net_sharpe for r in results])
+    point_estimate = float(np.mean(window_sharpes))
+    n_windows = len(window_sharpes)
+
+    bootstrap_means = []
+    for _ in range(n_bootstrap):
+        sample = rng.choice(window_sharpes, size=n_windows, replace=True)
+        bootstrap_means.append(float(np.mean(sample)))
+
+    bootstrap_means = np.array(bootstrap_means)
+    alpha = 1 - confidence_level
+    ci_lower = float(np.percentile(bootstrap_means, 100 * alpha / 2))
+    ci_upper = float(np.percentile(bootstrap_means, 100 * (1 - alpha / 2)))
+
+    return {
+        "point_estimate": round(point_estimate, 4),
+        "ci_lower": round(ci_lower, 4),
+        "ci_upper": round(ci_upper, 4),
+        "ci_width": round(ci_upper - ci_lower, 4),
+        "n_windows": n_windows,
+        "n_bootstrap": n_bootstrap,
+        "confidence_level": confidence_level,
+        "bootstrap_mean": round(float(np.mean(bootstrap_means)), 4),
+        "bootstrap_std": round(float(np.std(bootstrap_means)), 4),
+        "prob_positive": round(float(np.mean(bootstrap_means > 0)), 4),
+    }
+
+
+def run_subperiod_analysis(
+    panel: pd.DataFrame,
+    config: BacktestConfig | None = None,
+    lookback: int = 10,
+    momentum_col: str = "stock_specific_momentum",
+    quantile: float = 0.4,
+    n_subperiods: int = 3,
+) -> list[dict]:
+    """
+    Evaluate strategy performance across non-overlapping sub-periods.
+
+    Splits the data into equal temporal sub-periods and runs independent
+    walk-forward evaluations on each to check consistency.
+
+    Args:
+        panel: Preprocessed panel data.
+        config: Backtest configuration.
+        lookback: Momentum lookback.
+        momentum_col: Strategy column.
+        quantile: Portfolio quantile.
+        n_subperiods: Number of sub-periods to divide the data into.
+
+    Returns:
+        List of dicts with per-subperiod performance.
+    """
+    config = config or BacktestConfig()
+    dates = sorted(panel["date"].unique())
+    period_size = len(dates) // n_subperiods
+
+    subperiod_results = []
+    for i in range(n_subperiods):
+        start_idx = i * period_size
+        end_idx = (i + 1) * period_size if i < n_subperiods - 1 else len(dates)
+        sub_dates = dates[start_idx:end_idx]
+
+        sub_panel = panel[panel["date"].isin(sub_dates)].copy()
+        sub_config = BacktestConfig(
+            fee_bps=config.fee_bps,
+            slippage_bps=config.slippage_bps,
+            n_splits=max(2, config.n_splits // 2),
+            min_train_size=min(config.min_train_size, len(sub_dates) // 4),
+            train_ratio=config.train_ratio,
+            gap=config.gap,
+        )
+
+        results = run_walk_forward_evaluation(
+            sub_panel, config=sub_config, lookback=lookback,
+            momentum_col=momentum_col, quantile=quantile,
+        )
+
+        if results:
+            net_sharpes = [r.net_sharpe for r in results]
+            subperiod_results.append({
+                "subperiod": i + 1,
+                "start_date": str(pd.Timestamp(sub_dates[0]).date()),
+                "end_date": str(pd.Timestamp(sub_dates[-1]).date()),
+                "n_dates": len(sub_dates),
+                "netSharpe": round(float(np.mean(net_sharpes)), 4),
+                "grossSharpe": round(float(np.mean([r.gross_sharpe for r in results])), 4),
+                "annualReturn": round(float(np.mean([r.annual_return for r in results])), 4),
+                "maxDrawdown": round(float(min(r.max_drawdown for r in results)), 4),
+                "windows": len(results),
+                "positiveWindows": sum(1 for s in net_sharpes if s > 0),
+            })
+        else:
+            subperiod_results.append({
+                "subperiod": i + 1,
+                "start_date": str(pd.Timestamp(sub_dates[0]).date()),
+                "end_date": str(pd.Timestamp(sub_dates[-1]).date()),
+                "n_dates": len(sub_dates),
+                "netSharpe": 0.0,
+                "grossSharpe": 0.0,
+                "annualReturn": 0.0,
+                "maxDrawdown": 0.0,
+                "windows": 0,
+                "positiveWindows": 0,
+            })
+
+    return subperiod_results
+
+
+def evaluate_robustness(
+    panel: pd.DataFrame,
+    config: BacktestConfig | None = None,
+    lookback_values: list[int] | None = None,
+    quantile_values: list[float] | None = None,
+) -> dict:
+    """
+    Full Phase 7 pipeline: robustness verification of optimized parameters.
+
+    Runs holdout validation, walk-forward sensitivity, parameter neighborhood
+    analysis, bootstrap confidence intervals, and sub-period analysis.
+
+    Args:
+        panel: Preprocessed panel data.
+        config: Backtest configuration.
+        lookback_values: Lookback values for holdout grid search.
+        quantile_values: Quantile values for holdout grid search.
+
+    Returns:
+        Dict matching ARF metrics.json schema with robustness analysis in customMetrics.
+    """
+    config = config or BacktestConfig()
+    lookback_values = lookback_values or [5, 10, 12, 15, 20, 30]
+    quantile_values = quantile_values or [0.1, 0.2, 0.3, 0.4]
+
+    # Optimized params from Cycle 6
+    opt_lookback = 10
+    opt_quantile = 0.4
+    opt_strategy = "stock_specific_momentum"
+
+    logger.info("=== Phase 7: Robustness Verification ===")
+
+    # 1. Full-period backtest with optimized params
+    logger.info("1. Running full-period backtest with optimized parameters...")
+    full_results = run_walk_forward_evaluation(
+        panel, config=config, lookback=opt_lookback,
+        momentum_col=opt_strategy, quantile=opt_quantile,
+    )
+    full_metrics = generate_metrics_json(full_results, config)
+
+    # 2. Holdout validation
+    logger.info("2. Running holdout validation...")
+    holdout = run_holdout_validation(
+        panel, config=config,
+        lookback_values=lookback_values,
+        quantile_values=quantile_values,
+    )
+
+    # 3. Walk-forward configuration sensitivity
+    logger.info("3. Testing walk-forward configuration sensitivity...")
+    wf_sensitivity = run_walk_forward_sensitivity(
+        panel, lookback=opt_lookback,
+        momentum_col=opt_strategy, quantile=opt_quantile,
+    )
+
+    # 4. Parameter neighborhood stability
+    logger.info("4. Checking parameter neighborhood stability...")
+    neighborhood = check_parameter_neighborhood(
+        panel, config=config,
+        center_lookback=opt_lookback, center_quantile=opt_quantile,
+        strategy=opt_strategy,
+    )
+
+    # 5. Bootstrap confidence intervals
+    logger.info("5. Computing bootstrap confidence intervals...")
+    bootstrap = bootstrap_confidence(
+        panel, config=config, lookback=opt_lookback,
+        momentum_col=opt_strategy, quantile=opt_quantile,
+    )
+
+    # 6. Sub-period analysis
+    logger.info("6. Running sub-period analysis...")
+    subperiods = run_subperiod_analysis(
+        panel, config=config, lookback=opt_lookback,
+        momentum_col=opt_strategy, quantile=opt_quantile,
+    )
+
+    # 7. Also run all 3 strategies with their respective optimized params
+    logger.info("7. Running all strategies with optimized parameters...")
+    strategy_opt_params = {
+        "stock_specific_momentum": {"lookback": 10, "quantile": 0.4},
+        "industry_momentum": {"lookback": 30, "quantile": 0.3},
+        "total_momentum": {"lookback": 5, "quantile": 0.1},
+    }
+    all_strategy_results = {}
+    for strat, params in strategy_opt_params.items():
+        results = run_walk_forward_evaluation(
+            panel, config=config, lookback=params["lookback"],
+            momentum_col=strat, quantile=params["quantile"],
+        )
+        if results:
+            net_sharpes = [r.net_sharpe for r in results]
+            all_strategy_results[strat] = {
+                "lookback": params["lookback"],
+                "quantile": params["quantile"],
+                "netSharpe": round(float(np.mean(net_sharpes)), 4),
+                "grossSharpe": round(float(np.mean([r.gross_sharpe for r in results])), 4),
+                "annualReturn": round(float(np.mean([r.annual_return for r in results])), 4),
+                "maxDrawdown": round(float(min(r.max_drawdown for r in results)), 4),
+                "windows": len(results),
+                "positiveWindows": sum(1 for s in net_sharpes if s > 0),
+            }
+
+    # Compute walk-forward sensitivity summary
+    wf_sharpes = [r["netSharpe"] for r in wf_sensitivity if r["windows"] > 0]
+    wf_summary = {
+        "configurations_tested": len(wf_sensitivity),
+        "avg_sharpe": round(float(np.mean(wf_sharpes)), 4) if wf_sharpes else 0.0,
+        "std_sharpe": round(float(np.std(wf_sharpes)), 4) if wf_sharpes else 0.0,
+        "min_sharpe": round(float(np.min(wf_sharpes)), 4) if wf_sharpes else 0.0,
+        "max_sharpe": round(float(np.max(wf_sharpes)), 4) if wf_sharpes else 0.0,
+        "positive_fraction": round(sum(1 for s in wf_sharpes if s > 0) / max(1, len(wf_sharpes)), 4),
+    }
+
+    # Subperiod consistency
+    sub_sharpes = [s["netSharpe"] for s in subperiods]
+    subperiod_summary = {
+        "n_subperiods": len(subperiods),
+        "profitable_subperiods": sum(1 for s in sub_sharpes if s > 0),
+        "avg_sharpe": round(float(np.mean(sub_sharpes)), 4) if sub_sharpes else 0.0,
+        "std_sharpe": round(float(np.std(sub_sharpes)), 4) if sub_sharpes else 0.0,
+    }
+
+    # Robustness score: composite measure
+    robustness_checks = {
+        "holdout_positive": False,
+        "bootstrap_ci_positive": bootstrap["ci_lower"] > 0,
+        "neighborhood_stable": neighborhood["positive_fraction"] > 0.5,
+        "wf_config_robust": wf_summary.get("positive_fraction", 0) > 0.5,
+        "subperiod_consistent": subperiod_summary["profitable_subperiods"] > subperiod_summary["n_subperiods"] / 2,
+    }
+
+    # Check holdout
+    holdout_opt = holdout.get("optimized", {}).get(opt_strategy, {})
+    holdout_sharpe = holdout_opt.get("holdout_netSharpe", 0.0)
+    robustness_checks["holdout_positive"] = holdout_sharpe > 0
+
+    robustness_score = sum(robustness_checks.values()) / len(robustness_checks)
+
+    metrics = {
+        "sharpeRatio": full_metrics["sharpeRatio"],
+        "annualReturn": full_metrics["annualReturn"],
+        "maxDrawdown": full_metrics["maxDrawdown"],
+        "hitRate": full_metrics["hitRate"],
+        "totalTrades": full_metrics["totalTrades"],
+        "transactionCosts": full_metrics["transactionCosts"],
+        "walkForward": full_metrics["walkForward"],
+        "customMetrics": {
+            "phase": "robustness_verification",
+            "optimizedParams": {
+                "strategy": opt_strategy,
+                "lookback": opt_lookback,
+                "quantile": opt_quantile,
+            },
+            "holdoutValidation": holdout,
+            "walkForwardSensitivity": {
+                "summary": wf_summary,
+                "details": wf_sensitivity,
+            },
+            "parameterNeighborhood": {
+                "center": neighborhood["center"],
+                "avg_neighbor_sharpe": neighborhood["avg_neighbor_sharpe"],
+                "std_neighbor_sharpe": neighborhood["std_neighbor_sharpe"],
+                "positive_fraction": neighborhood["positive_fraction"],
+                "center_vs_avg_delta": neighborhood["center_vs_avg_delta"],
+                "n_neighbors": neighborhood["n_neighbors"],
+            },
+            "bootstrapConfidence": bootstrap,
+            "subperiodAnalysis": {
+                "summary": subperiod_summary,
+                "details": subperiods,
+            },
+            "allStrategiesOptimized": all_strategy_results,
+            "robustnessChecks": robustness_checks,
+            "robustnessScore": round(robustness_score, 4),
+        },
+    }
+    return metrics
+
+
 def save_metrics(metrics: dict, cycle: int = 4) -> Path:
     """Save metrics.json to the reports directory."""
     out_dir = REPORTS_DIR / f"cycle_{cycle}"
@@ -1115,12 +1706,12 @@ if __name__ == "__main__":
         panel, report = build_panel()
         panel.to_csv(panel_path, index=False)
 
-    # Run hyperparameter optimization (Phase 6)
-    print("\nRunning hyperparameter optimization (3 strategies x lookback x quantile grid)...")
+    # Run robustness verification (Phase 7)
+    print("\nRunning robustness verification with optimized parameters...")
     config = BacktestConfig(n_splits=5, min_train_size=60)
-    metrics = evaluate_hyperparameter_optimization(panel, config=config)
+    metrics = evaluate_robustness(panel, config=config)
 
     # Save results
-    save_metrics(metrics, cycle=6)
+    save_metrics(metrics, cycle=7)
     print("\n=== Metrics ===")
     print(json.dumps(metrics, indent=2))

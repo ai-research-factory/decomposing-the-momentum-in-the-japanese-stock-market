@@ -26,6 +26,13 @@
 - **Portfolio weighting**: Currently equal-weighted. The paper may use signal-weighted or risk-parity weighting.
 - **Quantile threshold sensitivity**: Using 30% quantile for long/short legs. Different thresholds may significantly affect results with only 33 stocks.
 
+## Decomposed Backtest Questions (Cycle 4)
+
+- **Stock-specific momentum outperforms**: The backtest shows stock-specific momentum (net Sharpe 0.52) outperforming total (-0.52) and industry (-0.28) momentum. This contradicts the paper's finding that industry momentum is the dominant driver. The likely explanation is the use of 12-day lookback at daily frequency, which captures short-term reversal/mean-reversion rather than the 12-month momentum effect studied in the paper.
+- **Total-industry correlation near 1.0**: The cross-sectional average correlation between total and industry momentum is ~1.0, meaning industry effects dominate total momentum composition. This aligns with the paper but needs verification at the individual stock level.
+- **Industry vs stock-specific correlation near zero**: The 0.026 correlation is expected from OLS residuals but may differ from the paper's reported negative correlation when using monthly frequency and longer lookback.
+- **Frequency mismatch**: The largest open question remains the daily vs monthly frequency gap. Phases 6+ should explore monthly resampling with 12-month lookback to align with the paper's methodology.
+
 ## ARF Data API Notes
 
 - All 33 requested tickers returned data successfully (no API errors).

@@ -302,7 +302,188 @@ def evaluate_momentum_strategy(
     return metrics
 
 
-def save_metrics(metrics: dict, cycle: int = 3) -> Path:
+STRATEGY_COLUMNS = ["total_momentum", "industry_momentum", "stock_specific_momentum"]
+
+
+def compute_factor_correlations(
+    panel: pd.DataFrame,
+    lookback: int = 12,
+) -> dict[str, float]:
+    """
+    Compute time-series correlations between decomposed momentum factors.
+
+    Calculates the cross-sectional average momentum for each factor at each
+    date, then computes the time-series correlation between these averages.
+
+    Args:
+        panel: Panel with [date, stock_id, industry_id, price].
+        lookback: Momentum lookback window.
+
+    Returns:
+        Dict with correlation pairs, e.g. {"industry_vs_stock_specific": -0.12, ...}.
+    """
+    scores = compute_momentum_scores(panel, lookback=lookback)
+    if scores.empty:
+        return {
+            "industry_vs_stock_specific": 0.0,
+            "total_vs_industry": 0.0,
+            "total_vs_stock_specific": 0.0,
+        }
+
+    # Compute cross-sectional mean at each date
+    daily_means = scores.groupby("date")[STRATEGY_COLUMNS].mean().dropna()
+
+    if len(daily_means) < 3:
+        return {
+            "industry_vs_stock_specific": 0.0,
+            "total_vs_industry": 0.0,
+            "total_vs_stock_specific": 0.0,
+        }
+
+    corr = daily_means.corr()
+    return {
+        "industry_vs_stock_specific": round(
+            float(corr.loc["industry_momentum", "stock_specific_momentum"]), 4
+        ),
+        "total_vs_industry": round(
+            float(corr.loc["total_momentum", "industry_momentum"]), 4
+        ),
+        "total_vs_stock_specific": round(
+            float(corr.loc["total_momentum", "stock_specific_momentum"]), 4
+        ),
+    }
+
+
+def run_decomposed_backtest(
+    panel: pd.DataFrame,
+    config: BacktestConfig | None = None,
+    lookback: int = 12,
+    quantile: float = 0.3,
+) -> dict[str, list[BacktestResult]]:
+    """
+    Run walk-forward backtest for all 3 decomposed momentum strategies.
+
+    Evaluates total, industry, and stock-specific momentum long-short
+    portfolios side by side using the same walk-forward windows.
+
+    Args:
+        panel: Preprocessed panel with [date, stock_id, industry_id, price].
+        config: Backtest configuration.
+        lookback: Momentum lookback window.
+        quantile: Fraction of stocks for long/short legs.
+
+    Returns:
+        Dict mapping strategy name -> list of BacktestResult.
+    """
+    config = config or BacktestConfig()
+    results = {}
+    for col in STRATEGY_COLUMNS:
+        logger.info("Running walk-forward for strategy: %s", col)
+        results[col] = run_walk_forward_evaluation(
+            panel, config=config, lookback=lookback,
+            momentum_col=col, quantile=quantile,
+        )
+    return results
+
+
+def compare_strategies(
+    all_results: dict[str, list[BacktestResult]],
+    config: BacktestConfig | None = None,
+) -> dict[str, dict]:
+    """
+    Generate metrics for each strategy and a comparison summary.
+
+    Args:
+        all_results: Dict mapping strategy name -> list of BacktestResult.
+        config: Backtest configuration.
+
+    Returns:
+        Dict with per-strategy metrics keyed by strategy name.
+    """
+    config = config or BacktestConfig()
+    comparison = {}
+    for strategy_name, results in all_results.items():
+        custom = {"strategy": f"long_short_{strategy_name}"}
+        metrics = generate_metrics_json(results, config, custom_metrics=custom)
+        comparison[strategy_name] = metrics
+    return comparison
+
+
+def evaluate_decomposed_strategies(
+    panel: pd.DataFrame,
+    config: BacktestConfig | None = None,
+    lookback: int = 12,
+    quantile: float = 0.3,
+) -> dict:
+    """
+    Full decomposed backtest: run all 3 strategies and generate combined metrics.
+
+    Returns a metrics dict conforming to the ARF schema, with per-strategy
+    breakdowns and factor correlations in customMetrics.
+
+    Args:
+        panel: Preprocessed panel data.
+        config: Backtest configuration.
+        lookback: Momentum lookback window.
+        quantile: Long/short quantile.
+
+    Returns:
+        Dict matching the ARF metrics.json schema with extended customMetrics.
+    """
+    config = config or BacktestConfig()
+
+    # Run all 3 strategies
+    all_results = run_decomposed_backtest(
+        panel, config=config, lookback=lookback, quantile=quantile,
+    )
+
+    # Compare strategies
+    comparison = compare_strategies(all_results, config)
+
+    # Compute factor correlations
+    correlations = compute_factor_correlations(panel, lookback=lookback)
+
+    # Find best strategy by net Sharpe
+    best_strategy = max(
+        comparison.keys(),
+        key=lambda k: comparison[k]["transactionCosts"]["netSharpe"],
+    )
+    best_metrics = comparison[best_strategy]
+
+    # Build per-strategy summary
+    strategy_summary = {}
+    for name, m in comparison.items():
+        strategy_summary[name] = {
+            "grossSharpe": m["sharpeRatio"],
+            "netSharpe": m["transactionCosts"]["netSharpe"],
+            "annualReturn": m["annualReturn"],
+            "maxDrawdown": m["maxDrawdown"],
+            "hitRate": m["hitRate"],
+            "windows": m["walkForward"]["windows"],
+            "positiveWindows": m["walkForward"]["positiveWindows"],
+        }
+
+    # Use best strategy for top-level metrics
+    metrics = {
+        "sharpeRatio": best_metrics["sharpeRatio"],
+        "annualReturn": best_metrics["annualReturn"],
+        "maxDrawdown": best_metrics["maxDrawdown"],
+        "hitRate": best_metrics["hitRate"],
+        "totalTrades": best_metrics["totalTrades"],
+        "transactionCosts": best_metrics["transactionCosts"],
+        "walkForward": best_metrics["walkForward"],
+        "customMetrics": {
+            "bestStrategy": best_strategy,
+            "lookback_periods": lookback,
+            "quantile": quantile,
+            "factorCorrelations": correlations,
+            "strategyComparison": strategy_summary,
+        },
+    }
+    return metrics
+
+
+def save_metrics(metrics: dict, cycle: int = 4) -> Path:
     """Save metrics.json to the reports directory."""
     out_dir = REPORTS_DIR / f"cycle_{cycle}"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -328,12 +509,12 @@ if __name__ == "__main__":
         panel, report = build_panel()
         panel.to_csv(panel_path, index=False)
 
-    # Run evaluation
-    print("\nRunning walk-forward evaluation of total momentum strategy...")
+    # Run decomposed backtest (Phase 4)
+    print("\nRunning decomposed momentum backtest (all 3 strategies)...")
     config = BacktestConfig(n_splits=5, min_train_size=60)
-    metrics = evaluate_momentum_strategy(panel, config=config, lookback=12)
+    metrics = evaluate_decomposed_strategies(panel, config=config, lookback=12)
 
     # Save results
-    save_metrics(metrics, cycle=3)
+    save_metrics(metrics, cycle=4)
     print("\n=== Metrics ===")
     print(json.dumps(metrics, indent=2))

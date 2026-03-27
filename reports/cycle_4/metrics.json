@@ -1,0 +1,56 @@
+{
+  "sharpeRatio": 0.5428,
+  "annualReturn": 0.0494,
+  "maxDrawdown": -0.109,
+  "hitRate": 0.5162,
+  "totalTrades": 72,
+  "transactionCosts": {
+    "feeBps": 10.0,
+    "slippageBps": 5.0,
+    "netSharpe": 0.5203
+  },
+  "walkForward": {
+    "windows": 4,
+    "positiveWindows": 3,
+    "avgOosSharpe": 0.5203
+  },
+  "customMetrics": {
+    "bestStrategy": "stock_specific_momentum",
+    "lookback_periods": 12,
+    "quantile": 0.3,
+    "factorCorrelations": {
+      "industry_vs_stock_specific": 0.0256,
+      "total_vs_industry": 1.0,
+      "total_vs_stock_specific": 0.0256
+    },
+    "strategyComparison": {
+      "total_momentum": {
+        "grossSharpe": -0.5047,
+        "netSharpe": -0.524,
+        "annualReturn": -0.0518,
+        "maxDrawdown": -0.2475,
+        "hitRate": 0.4708,
+        "windows": 4,
+        "positiveWindows": 1
+      },
+      "industry_momentum": {
+        "grossSharpe": -0.2645,
+        "netSharpe": -0.2838,
+        "annualReturn": -0.0254,
+        "maxDrawdown": -0.1347,
+        "hitRate": 0.4729,
+        "windows": 4,
+        "positiveWindows": 1
+      },
+      "stock_specific_momentum": {
+        "grossSharpe": 0.5428,
+        "netSharpe": 0.5203,
+        "annualReturn": 0.0494,
+        "maxDrawdown": -0.109,
+        "hitRate": 0.5162,
+        "windows": 4,
+        "positiveWindows": 3
+      }
+    }
+  }
+}

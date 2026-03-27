@@ -84,6 +84,28 @@ config = BacktestConfig(n_splits=5, min_train_size=60)
 metrics = evaluate_momentum_strategy(panel, config=config, lookback=12)
 ```
 
+## Cycle 4 Results
+
+Decomposed momentum backtest completed. Key findings:
+- All 3 strategies (total, industry, stock-specific) backtested with walk-forward validation
+- Stock-specific momentum is the best strategy: Net Sharpe 0.52, 3/4 positive windows
+- Total and industry momentum show negative Sharpe (-0.52, -0.28) at daily frequency
+- Near-zero correlation between industry and stock-specific factors (0.026)
+- 17 new tests (67 total, all passing)
+
+See [reports/cycle_4/technical_findings.md](reports/cycle_4/technical_findings.md) for details.
+
+### Run decomposed backtest
+```python
+from src.evaluation import evaluate_decomposed_strategies
+from src.backtest import BacktestConfig
+import pandas as pd
+
+panel = pd.read_csv("data/jp_stocks_panel.csv", parse_dates=["date"])
+config = BacktestConfig(n_splits=5, min_train_size=60)
+metrics = evaluate_decomposed_strategies(panel, config=config, lookback=12)
+```
+
 ## Reports
 
 Each cycle produces:

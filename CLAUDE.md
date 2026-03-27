@@ -7,7 +7,7 @@ proj_16402310
 StatArb, ResidualFactors
 
 ## Current Cycle
-3
+4
 
 ## Objective
 Implement, validate, and iteratively improve the paper's approach with production-quality standards.

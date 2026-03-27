@@ -1,0 +1,26 @@
+{
+  "sharpeRatio": 0.0,
+  "annualReturn": 0.0,
+  "maxDrawdown": 0.0,
+  "hitRate": 0.0,
+  "totalTrades": 0,
+  "transactionCosts": {
+    "feeBps": 10,
+    "slippageBps": 5,
+    "netSharpe": 0.0
+  },
+  "walkForward": {
+    "windows": 0,
+    "positiveWindows": 0,
+    "avgOosSharpe": 0.0
+  },
+  "customMetrics": {
+    "industry_stock_specific_correlation": 0.0002,
+    "valid_observations": 11980,
+    "n_stocks": 10,
+    "n_industries": 3,
+    "total_momentum_mean": 0.014936,
+    "industry_momentum_mean": 0.014939,
+    "stock_specific_momentum_mean": -7e-06
+  }
+}

@@ -4,7 +4,11 @@
 
 ## Overview
 
-Automated reproduction and validation of the paper above.
+Reproduces and validates the decomposition of stock momentum in the Japanese market
+into industry and stock-specific (residual) components. The approach regresses individual
+stock returns on equal-weighted industry returns, then computes rolling momentum scores
+for each component.
+
 See [CLAUDE.md](CLAUDE.md) for implementation instructions and phase plan.
 
 ## Setup
@@ -14,9 +18,39 @@ pip install -e ".[dev]"
 pytest tests/
 ```
 
+## Usage
+
+### Fetch data
+```bash
+python3 data/synthetic_data.py
+```
+
+### Run decomposition
+```python
+from src.decomposition import decompose_momentum
+import pandas as pd
+
+panel = pd.read_csv("data/jp_stocks_panel.csv", parse_dates=["date"])
+result = decompose_momentum(panel, lookback=12)
+```
+
+### Run tests
+```bash
+python3 -m pytest tests/ -v
+```
+
 ## Data
 
-Data is fetched from the ARF Data API at runtime. Do not commit data files.
+Data is fetched from the ARF Data API at runtime (10 Japanese stocks across 3 TOPIX industries). Do not commit data files.
+
+## Cycle 1 Results
+
+Core decomposition algorithm implemented. Key findings:
+- Industry momentum accounts for most of total momentum variance
+- Stock-specific momentum is mean-zero (by construction from regression residuals)
+- Near-zero correlation between industry and stock-specific components
+
+See [reports/cycle_1/technical_findings.md](reports/cycle_1/technical_findings.md) for details.
 
 ## Reports
 

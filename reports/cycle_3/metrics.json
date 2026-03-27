@@ -1,0 +1,27 @@
+{
+  "sharpeRatio": -0.5047,
+  "annualReturn": -0.0518,
+  "maxDrawdown": -0.2475,
+  "hitRate": 0.4708,
+  "totalTrades": 72,
+  "transactionCosts": {
+    "feeBps": 10.0,
+    "slippageBps": 5.0,
+    "netSharpe": -0.524
+  },
+  "walkForward": {
+    "windows": 4,
+    "positiveWindows": 1,
+    "avgOosSharpe": -0.524
+  },
+  "customMetrics": {
+    "strategy": "long_short_total_momentum",
+    "lookback_periods": 12,
+    "quantile": 0.3,
+    "momentum_column": "total_momentum",
+    "n_stocks": 33,
+    "n_industries": 7,
+    "date_range": "2021-03-26 to 2026-03-27",
+    "trading_days": 1223
+  }
+}

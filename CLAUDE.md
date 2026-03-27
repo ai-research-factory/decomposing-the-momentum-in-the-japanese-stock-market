@@ -7,7 +7,7 @@ proj_16402310
 StatArb, ResidualFactors
 
 ## Current Cycle
-2
+3
 
 ## Objective
 Implement, validate, and iteratively improve the paper's approach with production-quality standards.
@@ -69,29 +69,31 @@ df = df.set_index("timestamp")
 
 
 
-## ★ 今回のタスク (Cycle 2)
+## ★ 今回のタスク (Cycle 3)
 
 
-### Phase 2: 実データパイプラインの構築
+### Phase 3: 評価フレームワークの実装
 
-**ゴール**: 実際の日本株価データを取得し、前処理を行い、保存するパイプラインを構築する。
+**ゴール**: トータルモメンタム戦略を評価するための基本的なウォークフォワード検証を実装する。
 
 **具体的な作業指示**:
-1. `src/data_fetcher.py`を拡張し、ARF Data APIから利用可能な全日本株（33銘柄・7業種）を取得するパイプラインを構築する。
-2. 日付アラインメント、欠損値のフォワードフィル、外れ値検出などの前処理を実装する。
-3. データ品質レポート（DataQualityReport）を生成し、取得状況・欠損率・外れ値数を報告する。
-4. `tests/test_data_pipeline.py`にパイプライン各ステップのユニットテストを作成する。
+1. `src/evaluation.py`を新規作成し、トータルモメンタム戦略のウォークフォワード評価フレームワークを実装する。
+2. `src/backtest.py`の`WalkForwardValidator`, `calculate_costs`, `compute_metrics`, `generate_metrics_json`を活用する。
+3. パネルデータからモメンタムスコアを計算し、ロング・ショートポートフォリオを構築する。
+4. 各ウォークフォワード窓でのリターンを計算し、取引コストを考慮した評価を行う。
+5. `tests/test_evaluation.py`にユニットテストを作成する。
 
 **期待される出力ファイル**:
-- src/data_fetcher.py（拡張済み）
-- tests/test_data_pipeline.py
-- reports/cycle_2/metrics.json
-- reports/cycle_2/technical_findings.md
+- src/evaluation.py（新規）
+- tests/test_evaluation.py（新規）
+- reports/cycle_3/metrics.json
+- reports/cycle_3/technical_findings.md
 
 **受入基準**:
-- 33銘柄・7業種のデータが取得され、前処理済みパネルが生成される。
-- `tests/test_data_pipeline.py`のユニットテスト（16件）が全て成功する。
-- 既存の`tests/test_decomposition.py`のテスト（10件）も引き続き成功する。
+- ウォークフォワード検証が正しく動作し、各窓でのOOSメトリクスが計算される。
+- `tests/test_evaluation.py`のユニットテストが全て成功する。
+- 既存テスト（`test_decomposition.py` 10件、`test_data_pipeline.py` 16件）も引き続き成功する。
+- `reports/cycle_3/metrics.json`がARF標準スキーマに準拠する。
 
 
 
@@ -105,8 +107,8 @@ df = df.set_index("timestamp")
 ## 全体Phase計画 (参考)
 
 ✓ Phase 1: コア分解アルゴリズムの実装 — 合成データ上で株価の勢いを業界要因と個別要因に分解するコアロジックを実装する。
-→ Phase 2: 実データパイプラインの構築 — 実際の日本株価データを取得し、前処理を行い、保存するパイプラインを構築する。
-  Phase 3: 評価フレームワークの実装 — トータルモメンタム戦略を評価するための基本的なウォークフォワード検証を実装する。
+✓ Phase 2: 実データパイプラインの構築 — 実際の日本株価データを取得し、前処理を行い、保存するパイプラインを構築する。
+→ Phase 3: 評価フレームワークの実装 — トータルモメンタム戦略を評価するための基本的なウォークフォワード検証を実装する。
   Phase 4: 分解戦略のバックテスト — 分解アルゴリズムを評価フレームワークに統合し、3つの戦略（全体、業界、個別）をバックテストする。
   Phase 5: 取引コストの計算 — 取引コストモデルを実装し、グロスリターンとネットリターンを比較評価する。
   Phase 6: ハイパーパラメータ最適化 — モメンタムのルックバック期間や保有期間などの主要パラメータを最適化する。

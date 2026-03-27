@@ -63,6 +63,27 @@ Real data pipeline built. Key improvements:
 
 See [reports/cycle_2/technical_findings.md](reports/cycle_2/technical_findings.md) for details.
 
+## Cycle 3 Results
+
+Walk-forward evaluation framework implemented. Key findings:
+- Total momentum long-short strategy evaluated with 5-fold walk-forward validation
+- Gross Sharpe: -0.50, Net Sharpe: -0.52 (negative — short lookback + daily frequency)
+- 24 new evaluation tests (50 total, all passing)
+- Framework uses `WalkForwardValidator` and standard backtest utilities
+
+See [reports/cycle_3/technical_findings.md](reports/cycle_3/technical_findings.md) for details.
+
+### Run evaluation
+```python
+from src.evaluation import evaluate_momentum_strategy
+from src.backtest import BacktestConfig
+import pandas as pd
+
+panel = pd.read_csv("data/jp_stocks_panel.csv", parse_dates=["date"])
+config = BacktestConfig(n_splits=5, min_train_size=60)
+metrics = evaluate_momentum_strategy(panel, config=config, lookback=12)
+```
+
 ## Reports
 
 Each cycle produces:

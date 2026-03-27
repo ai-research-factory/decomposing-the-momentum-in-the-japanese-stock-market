@@ -19,6 +19,13 @@
 - Equal-weighted industry returns are used. Value-weighted returns might better reflect actual industry momentum.
 - Forward-fill strategy assumes that a stock's last observed price is the best estimate for missing days. This is standard but may introduce slight bias during volatile periods.
 
+## Evaluation Framework Questions (Cycle 3)
+
+- **Negative total momentum Sharpe**: The total momentum strategy shows negative Sharpe (-0.50) on real data. This likely results from using a 12-day lookback at daily frequency, which captures short-term reversal rather than the 12-month momentum effect in the paper. Phase 4+ should explore monthly rebalancing and longer lookback.
+- **Static vs dynamic portfolios**: The current implementation forms a static portfolio at the end of each training window and holds it through the test window. The paper may rebalance monthly. Dynamic rebalancing will be explored in later phases.
+- **Portfolio weighting**: Currently equal-weighted. The paper may use signal-weighted or risk-parity weighting.
+- **Quantile threshold sensitivity**: Using 30% quantile for long/short legs. Different thresholds may significantly affect results with only 33 stocks.
+
 ## ARF Data API Notes
 
 - All 33 requested tickers returned data successfully (no API errors).
